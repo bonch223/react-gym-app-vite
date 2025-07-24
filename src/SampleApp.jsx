@@ -70,7 +70,7 @@ const generateReceipt = (saleData, branding) => {
 
     // --- Build Receipt ---
     append(INIT);
-    
+
     // Header
     append(ALIGN_CENTER);
     append(BOLD_ON);
@@ -110,17 +110,17 @@ const generateReceipt = (saleData, branding) => {
     // Payment Details
     append(encoder.encode(formatLine("Payment Method:", saleData.paymentMethod)));
     if (saleData.paymentMethod === 'Split' || saleData.paymentMethod === 'Cash') {
-         append(encoder.encode(formatLine("Cash Paid:", `P${saleData.cashPaid.toFixed(2)}`)));
+        append(encoder.encode(formatLine("Cash Paid:", `P${saleData.cashPaid.toFixed(2)}`)));
     }
-     if (saleData.paymentMethod === 'Split' || saleData.paymentMethod === 'Online') {
-         append(encoder.encode(formatLine("Online Paid:", `P${saleData.onlinePaid.toFixed(2)}`)));
+    if (saleData.paymentMethod === 'Split' || saleData.paymentMethod === 'Online') {
+        append(encoder.encode(formatLine("Online Paid:", `P${saleData.onlinePaid.toFixed(2)}`)));
     }
     append(LF);
-    
+
     // Footer
     append(ALIGN_CENTER);
     append(encoder.encode("Thank you!\n"));
-    
+
     // Cut paper
     append(FEED_AND_CUT);
 
@@ -132,23 +132,23 @@ const generateReceipt = (saleData, branding) => {
 const getExpiryDate = (startDate, durationValue, durationUnit) => {
     const date = new Date(startDate);
     date.setUTCHours(0, 0, 0, 0);
-    
+
     if (durationUnit === 'Months') {
         date.setUTCMonth(date.getUTCMonth() + parseInt(durationValue, 10));
     } else if (durationUnit === 'Days') {
         date.setUTCDate(date.getUTCDate() + parseInt(durationValue, 10));
     } else if (durationUnit === 'Sessions') {
-        return null; 
+        return null;
     }
     return date.toISOString();
 };
 
 const getOverallMemberStatus = (services = []) => {
     if (!services || services.length === 0) return { text: 'No Active Services', color: 'gray', sortOrder: 5 };
-    
+
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    
+
     const allPaused = services.every(s => s.status === 'paused');
     if (allPaused) {
         return { text: 'Paused', color: 'blue', sortOrder: 1 };
@@ -160,7 +160,7 @@ const getOverallMemberStatus = (services = []) => {
     const activeServices = services.filter(s => s.status !== 'paused');
 
     if (activeServices.length === 0) {
-         return { text: 'Paused', color: 'blue', sortOrder: 1 };
+        return { text: 'Paused', color: 'blue', sortOrder: 1 };
     }
 
     activeServices.forEach(s => {
@@ -187,7 +187,7 @@ const getOverallMemberStatus = (services = []) => {
     if (earliestExpiry <= fiveDaysFromNow) {
         return { text: 'Expiring Soon', color: 'yellow', sortOrder: 2 };
     }
-    
+
     return { text: 'Active', color: 'green', sortOrder: 3 };
 };
 
@@ -240,7 +240,7 @@ export default function App() {
         if (savedUser) {
             setCurrentUser(JSON.parse(savedUser));
         }
-        
+
         const fetchBranding = async () => {
             const savedBranding = await dbAction('branding', 'readonly', (store) => store.get('brandSettings'));
             if (savedBranding) {
@@ -248,7 +248,7 @@ export default function App() {
             }
             setIsLoading(false);
         };
-        
+
         fetchBranding();
     }, []);
 
@@ -264,7 +264,7 @@ export default function App() {
     return (
         <>
             <style>{`:root { --primary-color: ${branding.primaryColor}; --accent-color: ${branding.accentColor}; }`}</style>
-            <div className="app-container" style={{'--primary-color': branding.primaryColor, '--accent-color': branding.accentColor}}>
+            <div className="app-container" style={{ '--primary-color': branding.primaryColor, '--accent-color': branding.accentColor }}>
                 {currentUser ? <GymManagementSystem currentUser={currentUser} setCurrentUser={setCurrentUser} branding={branding} setBranding={setBranding} /> : <LoginScreen setCurrentUser={setCurrentUser} />}
             </div>
         </>
@@ -281,7 +281,7 @@ const LoginScreen = ({ setCurrentUser }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
-        
+
         const users = await dbAction('system_users', 'readonly', (store) => store.getAll());
 
         if (isLogin) {
@@ -308,25 +308,115 @@ const LoginScreen = ({ setCurrentUser }) => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-100 flex flex-col justify-center items-center p-4">
-            <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-lg">
-                <h2 className="text-3xl font-bold text-center text-gray-800 mb-6">{isLogin ? 'Login' : 'Sign Up'}</h2>
-                <div className="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-700 p-4 mb-4 rounded-md">
-                    <p className="font-bold">Important Notice</p>
-                    <p className="text-sm">This is an offline application. All data is stored locally in your browser. Use the Backup feature in Settings to prevent data loss.</p>
+        <div className="hero min-h-screen bg-gradient-to-br from-red-50 to-red-100">
+            <div className="hero-content flex-col">
+                {/* Gym Logo */}
+                <div className="text-center mb-6">
+                    <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-indigo-700 to-red-600 rounded-full shadow-lg mb-4">
+                        <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M20.57 14.86L22 13.43 20.57 12 17 15.57 8.43 7 12 3.43 10.57 2 9.14 3.43 7.71 2 5.57 4.14 4.14 2.71 2.71 4.14l1.43 1.43L2 7.71l1.43 1.43L2 10.57 3.43 12 7 8.43 15.57 17 12 20.57 13.43 22l1.43-1.43L16.29 22l2.14-2.14 1.43 1.43 1.43-1.43-1.43-1.43L22 16.29l-1.43-1.43z" />
+                            <circle cx="12" cy="12" r="1.5" />
+                        </svg>
+                    </div>
+                    <h1 className="text-4xl font-extrabold text-gray-800 mb-2">GymFit Pro</h1>
+                    <p className="text-lg text-gray-600 font-medium">Fitness Management System</p>
                 </div>
-                {error && <p className="bg-red-100 text-red-700 p-3 rounded-lg mb-4">{error}</p>}
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    {!isLogin && <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Full Name" required className="w-full p-3 border rounded-lg" />}
-                    <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required className="w-full p-3 border rounded-lg" />
-                    <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="w-full p-3 border rounded-lg" />
-                    <button type="submit" className="w-full bg-[var(--primary-color)] text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity">Login</button>
-                </form>
-                <p className="text-center mt-4">
-                    <button onClick={() => setIsLogin(!isLogin)} className="text-[var(--primary-color)] hover:underline">
-                        {isLogin ? "Need an account? Sign Up" : "Already have an account? Login"}
-                    </button>
-                </p>
+
+                <div className="card w-full max-w-md shadow-2xl bg-base-100 border border-base-300">
+                    <div className="card-body p-8">
+                        <h2 className="card-title text-3xl font-bold justify-center text-base-content mb-6">
+                            {isLogin ? 'Login' : 'Sign Up'}
+                        </h2>
+
+                        <div className="alert alert-warning mb-4">
+                            <div>
+                                <h3 className="font-bold">Important Notice</h3>
+                                <div className="text-xs">This is an offline application. All data is stored locally in your browser. Use the Backup feature in Settings to prevent data loss.</div>
+                            </div>
+                        </div>
+
+                        {error && (
+                            <div className="alert alert-error mb-4">
+                                <div>{error}</div>
+                            </div>
+                        )}
+
+                        <form onSubmit={handleSubmit} className="space-y-6">
+                            {!isLogin && (
+                                <div className="form-control relative">
+                                    <input
+                                        type="text"
+                                        value={fullName}
+                                        onChange={e => setFullName(e.target.value)}
+                                        required
+                                        className="input input-bordered w-full peer placeholder-transparent"
+                                        placeholder=" "
+                                        id="fullName"
+                                    />
+                                    <label
+                                        htmlFor="fullName"
+                                        className="absolute left-3 -top-3 text-sm text-gray-600 bg-base-100 px-2 transition-all duration-200 peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-400 peer-focus:-top-3 peer-focus:text-sm peer-focus:text-primary"
+                                    >
+                                        Full Name
+                                    </label>
+                                </div>
+                            )}
+
+                            <div className="form-control relative">
+                                <input
+                                    type="text"
+                                    value={username}
+                                    onChange={e => setUsername(e.target.value)}
+                                    required
+                                    className="input input-bordered w-full peer placeholder-transparent"
+                                    placeholder=" "
+                                    id="username"
+                                />
+                                <label
+                                    htmlFor="username"
+                                    className="absolute left-3 -top-3 text-sm text-gray-600 bg-base-100 px-2 transition-all duration-200 peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-400 peer-focus:-top-3 peer-focus:text-sm peer-focus:text-primary"
+                                >
+                                    Username
+                                </label>
+                            </div>
+
+                            <div className="form-control relative">
+                                <input
+                                    type="password"
+                                    value={password}
+                                    onChange={e => setPassword(e.target.value)}
+                                    required
+                                    className="input input-bordered w-full peer placeholder-transparent"
+                                    placeholder=" "
+                                    id="password"
+                                />
+                                <label
+                                    htmlFor="password"
+                                    className="absolute left-3 -top-3 text-sm text-gray-600 bg-base-100 px-2 transition-all duration-200 peer-placeholder-shown:top-3 peer-placeholder-shown:text-base peer-placeholder-shown:text-gray-400 peer-focus:-top-3 peer-focus:text-sm peer-focus:text-primary"
+                                >
+                                    Password
+                                </label>
+                            </div>
+
+                            <div className="form-control mt-6">
+                                <button type="submit" className="btn btn-primary w-full">
+                                    {isLogin ? 'Login' : 'Sign Up'}
+                                </button>
+                            </div>
+                        </form>
+
+                        <div className="divider">OR</div>
+
+                        <div className="text-center">
+                            <button
+                                onClick={() => setIsLogin(!isLogin)}
+                                className="btn btn-ghost btn-sm"
+                            >
+                                {isLogin ? "Need an account? Sign Up" : "Already have an account? Login"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     );
@@ -336,7 +426,7 @@ const LoginScreen = ({ setCurrentUser }) => {
 const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBranding }) => {
     const [activeTab, setActiveTab] = useState('dashboard');
     const [notification, setNotification] = useState(null);
-    
+
     const [members, setMembers] = useState([]);
     const [inventory, setInventory] = useState([]);
     const [services, setServices] = useState([]);
@@ -387,7 +477,7 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
         setNotification({ message, type });
         setTimeout(() => setNotification(null), 5000);
     };
-    
+
     const addLog = async (action) => {
         const newLog = { id: Date.now().toString(), action, user: currentUser.username, timestamp: new Date().toISOString() };
         await dbAction('logs', 'readwrite', (store) => store.add(newLog));
@@ -456,7 +546,7 @@ const Header = ({ activeTab, setActiveTab, user, onLogout, printerConnected, bra
                         <button onClick={onLogout} className="bg-[var(--primary-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity">Logout</button>
                     </div>
                 </div>
-                <nav className="flex space-x-1 overflow-x-auto">{tabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center flex-shrink-0 px-4 py-3 font-medium rounded-t-lg transition-colors duration-200 ${ activeTab === tab.id ? 'bg-gray-100 text-[var(--primary-color)]' : 'text-white hover:bg-gray-700'}`}>{tab.icon} {tab.label}</button>))} </nav>
+                <nav className="flex space-x-1 overflow-x-auto">{tabs.map(tab => (<button key={tab.id} onClick={() => setActiveTab(tab.id)} className={`flex items-center flex-shrink-0 px-4 py-3 font-medium rounded-t-lg transition-colors duration-200 ${activeTab === tab.id ? 'bg-gray-100 text-[var(--primary-color)]' : 'text-white hover:bg-gray-700'}`}>{tab.icon} {tab.label}</button>))} </nav>
             </div>
         </header>
     );
@@ -541,7 +631,7 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
     }, [activeSale]);
 
     const handleScan = async (e) => { e.preventDefault(); const id = inputValue.trim(); if (!id) return; setInputValue(''); const member = members.find(m => m.id === id); if (member) { handleMemberCheckIn(member); return; } const item = inventory.find(i => i.id === id); if (item) { handleAddItemToSale(item); return; } showNotification(`ID "${id}" not found.`, 'error'); };
-    
+
     const handleMemberCheckIn = async (member) => {
         if (!activeShift) { showNotification('No active shift. Please start a shift first.', 'error'); return; }
         const activeCheckins = checkIns.filter(ci => ci.status === 'active');
@@ -565,11 +655,11 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
         showNotification('Member checked out.', 'success');
         addLog(`Member ${checkInToUpdate.memberName} checked out.`);
     };
-    
+
     const handleAddItemToSale = async (item) => {
         if (!activeShift) { showNotification('No active shift. Please start a shift first.', 'error'); return; }
         if (!item.isUnlimited && item.quantity <= 0) { showNotification(`${item.name} is out of stock!`, 'error'); return; }
-        
+
         let saleToUpdate = activeSale;
         let isNewSale = false;
 
@@ -585,35 +675,35 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
         }
 
         const currentItemInSale = saleToUpdate.items.find(i => i.id === item.id);
-        const newItems = currentItemInSale 
-            ? saleToUpdate.items.map(i => i.id === item.id ? {...i, qty: i.qty + 1} : i)
-            : [...saleToUpdate.items, {id: item.id, name: item.name, price: item.price, qty: 1}];
-        
+        const newItems = currentItemInSale
+            ? saleToUpdate.items.map(i => i.id === item.id ? { ...i, qty: i.qty + 1 } : i)
+            : [...saleToUpdate.items, { id: item.id, name: item.name, price: item.price, qty: 1 }];
+
         const newTotal = newItems.reduce((sum, i) => sum + (i.price * i.qty), 0);
-        const updatedSale = {...saleToUpdate, items: newItems, totalAmount: newTotal};
-        
+        const updatedSale = { ...saleToUpdate, items: newItems, totalAmount: newTotal };
+
         if (!item.isUnlimited) {
-            const updatedInventoryItem = {...item, quantity: item.quantity - 1};
+            const updatedInventoryItem = { ...item, quantity: item.quantity - 1 };
             await dbAction('inventory', 'readwrite', (store) => store.put(updatedInventoryItem));
             setInventory(prev => prev.map(i => i.id === item.id ? updatedInventoryItem : i));
         }
-        
+
         await dbAction('sales', 'readwrite', (store) => store.put(updatedSale));
         setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
-        
+
         if (isNewSale) {
-             setActiveSale(updatedSale);
+            setActiveSale(updatedSale);
         } else {
-            setActiveSale(prev => ({...prev, items: newItems, totalAmount: newTotal}));
+            setActiveSale(prev => ({ ...prev, items: newItems, totalAmount: newTotal }));
         }
         showNotification(`${item.name} added to sale.`, 'success');
         setProductSearch('');
     };
-    
+
     const handleAssignMemberToSale = async (member) => {
         if (!activeSale) return;
         const memberName = formatMemberName(member);
-        const updatedSale = {...activeSale, memberId: member.id, memberName};
+        const updatedSale = { ...activeSale, memberId: member.id, memberName };
         await dbAction('sales', 'readwrite', (store) => store.put(updatedSale));
         setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
         setActiveSale(updatedSale);
@@ -621,11 +711,11 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
         setAssignMemberSearch('');
     };
 
-    const handleProcessPayment = async (paymentDetails) => { 
-        if (!activeSale) return; 
+    const handleProcessPayment = async (paymentDetails) => {
+        if (!activeSale) return;
         const updatedSale = {
-            ...activeSale, 
-            status: 'Paid', 
+            ...activeSale,
+            status: 'Paid',
             note: saleNote,
             paymentMethod: paymentDetails.method,
             cashPaid: paymentDetails.cashAmount || 0,
@@ -633,9 +723,9 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
         };
         await dbAction('sales', 'readwrite', (store) => store.put(updatedSale));
         setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
-        await addLog(`Sale ${activeSale.id.slice(-4)} for ₱${activeSale.totalAmount.toFixed(2)} paid via ${paymentDetails.method}.`); 
-        showNotification(`Sale marked as Paid.`, 'success'); 
-        
+        await addLog(`Sale ${activeSale.id.slice(-4)} for ₱${activeSale.totalAmount.toFixed(2)} paid via ${paymentDetails.method}.`);
+        showNotification(`Sale marked as Paid.`, 'success');
+
         // Print receipt
         if (printerCharacteristic) {
             try {
@@ -649,22 +739,22 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
             }
         }
 
-        setActiveSale(null); 
+        setActiveSale(null);
         setPaymentModalOpen(false);
     };
 
     const handleCancelItem = async (itemIndex) => {
         if (!activeSale) return;
-        
+
         const itemToRemove = activeSale.items[itemIndex];
         const newItems = activeSale.items.filter((_, index) => index !== itemIndex);
         const newTotal = newItems.reduce((sum, i) => sum + (i.price * i.qty), 0);
-        
-        const updatedSale = {...activeSale, items: newItems, totalAmount: newTotal};
-        
+
+        const updatedSale = { ...activeSale, items: newItems, totalAmount: newTotal };
+
         const originalItem = inventory.find(i => i.id === itemToRemove.id);
         if (originalItem && !originalItem.isUnlimited) {
-            const updatedInventoryItem = {...originalItem, quantity: originalItem.quantity + itemToRemove.qty};
+            const updatedInventoryItem = { ...originalItem, quantity: originalItem.quantity + itemToRemove.qty };
             await dbAction('inventory', 'readwrite', (store) => store.put(updatedInventoryItem));
             setInventory(prev => prev.map(i => i.id === originalItem.id ? updatedInventoryItem : i));
         }
@@ -685,11 +775,11 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
 
     const handleVoidSale = async () => {
         if (!activeSale) return;
-        
+
         for (const item of activeSale.items) {
             const originalItem = inventory.find(i => i.id === item.id);
             if (originalItem && !originalItem.isUnlimited) {
-                const updatedInventoryItem = {...originalItem, quantity: originalItem.quantity + item.qty};
+                const updatedInventoryItem = { ...originalItem, quantity: originalItem.quantity + item.qty };
                 await dbAction('inventory', 'readwrite', (store) => store.put(updatedInventoryItem));
                 setInventory(prev => prev.map(i => i.id === originalItem.id ? updatedInventoryItem : i));
             }
@@ -736,64 +826,204 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
     const filteredProducts = productSearch ? inventory.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase())) : [];
     const assignableMembers = assignMemberSearch ? members.filter(m => `${m.firstName} ${m.lastName} ${m.nickname}`.toLowerCase().includes(assignMemberSearch.toLowerCase())) : [];
     const unpaidSales = sales.filter(s => s.status === 'Unpaid');
-    const activeCheckins = checkIns.filter(ci => ci.status === 'active').sort((a,b) => new Date(b.checkinTimestamp) - new Date(a.checkinTimestamp));
+    const activeCheckins = checkIns.filter(ci => ci.status === 'active').sort((a, b) => new Date(b.checkinTimestamp) - new Date(a.checkinTimestamp));
 
     return (
-        <div className="space-y-8">
-             <DashboardAnalytics members={members} sales={sales} checkIns={checkIns} />
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {shiftModal && <ShiftModal type={shiftModal} activeShift={activeShift} sales={sales} expenses={expenses} onCancel={() => setShiftModal(null)} showNotification={showNotification} addLog={addLog} user={user} setShifts={setShifts} setExpenses={setExpenses} shifts={shifts}/>}
+        <div className="space-y-6">
+            <DashboardAnalytics members={members} sales={sales} checkIns={checkIns} />
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6"
+
+                style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                {shiftModal && <ShiftModal type={shiftModal} activeShift={activeShift} sales={sales} expenses={expenses} onCancel={() => setShiftModal(null)} showNotification={showNotification} addLog={addLog} user={user} setShifts={setShifts} setExpenses={setExpenses} shifts={shifts} />}
                 {paymentModalOpen && activeSale && <PaymentModal sale={activeSale} onCancel={() => setPaymentModalOpen(false)} onConfirm={handleProcessPayment} />}
                 {expenseModalOpen && <ExpenseModal onCancel={() => setExpenseModalOpen(false)} onConfirm={handleAddExpense} />}
                 {cashInModalOpen && <CashInModal onCancel={() => setCashInModalOpen(false)} onConfirm={handleAddCashIn} />}
 
-                <div className="lg:col-span-2 space-y-8">
-                    <div className="bg-white p-6 rounded-2xl shadow-lg">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-xl font-bold text-gray-800">Shift Management</h2>
-                            <div className="flex gap-2">
-                               {activeShift && <button onClick={() => setCashInModalOpen(true)} className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600">Add Cash In</button>}
-                               {activeShift && <button onClick={() => setExpenseModalOpen(true)} className="bg-yellow-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-yellow-600">Record Expense</button>}
-                               {activeShift ? <button onClick={() => setShiftModal('end')} className="bg-[var(--accent-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity">End Shift</button> : <button onClick={() => setShiftModal('start')} className="bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Start Shift</button>}
+                <div className="lg:col-span-2 space-y-6">
+                    {/* Shift Management Card */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="p-5 border-b border-gray-50">
+                            <div className="flex justify-between items-center">
+                                <h2 className="text-lg font-semibold text-gray-900">Shift Control</h2>
+                                <div className="flex gap-2">
+                                    {activeShift && <button onClick={() => setCashInModalOpen(true)} className="bg-indigo-50 text-indigo-700 text-sm font-medium py-2 px-3 rounded-lg hover:bg-indigo-100 transition-colors">Cash In</button>}
+                                    {activeShift && <button onClick={() => setExpenseModalOpen(true)} className="bg-amber-50 text-amber-700 text-sm font-medium py-2 px-3 rounded-lg hover:bg-amber-100 transition-colors">Expense</button>}
+                                    {activeShift ? <button onClick={() => setShiftModal('end')} className="bg-red-50 text-red-700 text-sm font-medium py-2 px-3 rounded-lg hover:bg-red-100 transition-colors">End Shift</button> : <button onClick={() => setShiftModal('start')} className="bg-green-50 text-green-700 text-sm font-medium py-2 px-3 rounded-lg hover:bg-green-100 transition-colors">Start Shift</button>}
+                                </div>
                             </div>
                         </div>
-                        {activeShift ? <p className="text-green-600">Shift is active. Started at {new Date(activeShift.startTime).toLocaleString()}</p> : <p className="text-red-600">No active shift. Please start a shift to begin transactions.</p>}
+                        <div className="p-5">
+                            {activeShift ?
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                    <p className="text-sm text-gray-600">Active since {new Date(activeShift.startTime).toLocaleString()}</p>
+                                </div>
+                                :
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                                    <p className="text-sm text-gray-500">No active shift</p>
+                                </div>
+                            }
+                        </div>
                     </div>
 
-                    <div className={`bg-white p-6 rounded-2xl shadow-lg ${!activeShift ? 'opacity-50 pointer-events-none' : ''}`}>
-                        <h2 className="text-xl font-bold text-gray-800 mb-4">Scanner / Check-in</h2>
-                        <form onSubmit={handleScan}><div className="flex items-center border-2 border-[var(--primary-color)] rounded-lg p-2"><Icons.Barcode /><input ref={inputRef} type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} placeholder="Scan Member ID or Product Barcode" className="w-full text-lg p-2 border-none focus:ring-0" /><button type="submit" className="bg-[var(--primary-color)] text-white font-bold py-2 px-6 rounded-lg hover:opacity-90 transition-opacity">Enter</button></div></form>
-                        <div className="mt-4 pt-4 border-t">
-                            <h3 className="text-lg font-semibold mb-2">Manual Actions</h3>
+                    {/* Scanner / Check-in Card */}
+                    <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${!activeShift ? 'opacity-40 pointer-events-none' : ''}`}>
+                        <div className="p-5 border-b border-gray-50">
+                            <h2 className="text-lg font-semibold text-gray-900">Quick Actions</h2>
+                        </div>
+                        <div className="p-5 space-y-5">
+                            {/* Scanner Input */}
+                            <form onSubmit={handleScan}>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Icons.Barcode className="h-5 w-5 text-gray-400" />
+                                    </div>
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        value={inputValue}
+                                        onChange={(e) => setInputValue(e.target.value)}
+                                        className="block w-full pl-10 pr-20 py-3 border border-gray-200 rounded-lg text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                        placeholder="Scan barcode or search..."
+                                    />
+                                    <button
+                                        type="submit"
+                                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-indigo-600 hover:text-indigo-700"
+                                    >
+                                        <span className="text-sm font-medium">Enter</span>
+                                    </button>
+                                </div>
+                            </form>
+
+                            {/* Manual Search Fields */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="relative"><input type="text" placeholder="Search for member check-in..." value={memberSearch} onChange={e => setMemberSearch(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg"/>{filteredMembers.length > 0 && <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">{filteredMembers.map(member => <li key={member.id} onClick={() => handleMemberCheckIn(member)} className="p-2 hover:bg-indigo-50 cursor-pointer">{formatMemberFullName(member)}</li>)}</ul>}</div>
-                                <div className="relative"><input type="text" placeholder="Search product to start/add to sale..." value={productSearch} onChange={e => setProductSearch(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg"/>{filteredProducts.length > 0 && <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">{filteredProducts.map(item => <li key={item.id} onClick={() => handleAddItemToSale(item)} className="p-2 hover:bg-indigo-50 cursor-pointer">{item.name}</li>)}</ul>}</div>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder=" "
+                                        value={memberSearch}
+                                        onChange={e => setMemberSearch(e.target.value)}
+                                        className="block w-full px-3 pt-6 pb-2 text-sm border border-gray-200 rounded-lg placeholder-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent peer"
+                                        id="memberSearch"
+                                    />
+                                    <label
+                                        htmlFor="memberSearch"
+                                        className="absolute text-sm text-gray-500 duration-300 transform -translate-y-4 scale-75 top-4 left-3 origin-[0] peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-1 peer-focus:scale-75 peer-focus:-translate-y-4"
+                                    >
+                                        Member Check-in
+                                    </label>
+                                    {filteredMembers.length > 0 &&
+                                        <ul className="absolute z-20 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">
+                                            {filteredMembers.map(member =>
+                                                <li key={member.id} onClick={() => handleMemberCheckIn(member)} className="p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 last:border-b-0">
+                                                    {formatMemberFullName(member)}
+                                                </li>
+                                            )}
+                                        </ul>
+                                    }
+                                </div>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder=" "
+                                        value={productSearch}
+                                        onChange={e => setProductSearch(e.target.value)}
+                                        className="block w-full px-3 pt-6 pb-2 text-sm border border-gray-200 rounded-lg placeholder-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent peer"
+                                        id="productSearch"
+                                    />
+                                    <label
+                                        htmlFor="productSearch"
+                                        className="absolute text-sm text-gray-500 duration-300 transform -translate-y-4 scale-75 top-4 left-3 origin-[0] peer-placeholder-shown:scale-100 peer-placeholder-shown:translate-y-1 peer-focus:scale-75 peer-focus:-translate-y-4"
+                                    >
+                                        Product Search
+                                    </label>
+                                    {filteredProducts.length > 0 &&
+                                        <ul className="absolute z-20 w-full bg-white border border-gray-200 rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">
+                                            {filteredProducts.map(item =>
+                                                <li key={item.id} onClick={() => handleAddItemToSale(item)} className="p-3 hover:bg-gray-50 cursor-pointer text-sm border-b border-gray-50 last:border-b-0">
+                                                    {item.name}
+                                                </li>
+                                            )}
+                                        </ul>
+                                    }
+                                </div>
                             </div>
                         </div>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl shadow-lg">
-                        <h2 className="text-xl font-bold text-gray-800 mb-4">Open Sales</h2>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">{unpaidSales.map(sale => (<button key={sale.id} onClick={(e) => { e.stopPropagation(); setActiveSale(sale); }} className={`p-3 rounded-lg text-left transition ${activeSale?.id === sale.id ? 'bg-[var(--primary-color)] text-white shadow-lg' : 'bg-gray-100 hover:bg-gray-200'}`}><p className="font-bold truncate">{sale.memberName}</p><p className="text-sm">₱{sale.totalAmount.toFixed(2)}</p><p className="text-xs opacity-70">ID: ...{sale.id.slice(-4)}</p></button>))}</div>
+
+                    {/* Open Sales Card */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="p-5 border-b border-gray-50">
+                            <h2 className="text-lg font-semibold text-gray-900">Open Sales</h2>
+                        </div>
+                        <div className="p-5">
+                            {unpaidSales.length > 0 ? (
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                                    {unpaidSales.map(sale => (
+                                        <button
+                                            key={sale.id}
+                                            onClick={(e) => { e.stopPropagation(); setActiveSale(sale); }}
+                                            className={`p-3 rounded-lg text-left transition-all duration-200 ${activeSale?.id === sale.id
+                                                    ? 'bg-indigo-50 border-2 border-indigo-200 shadow-sm'
+                                                    : 'bg-gray-50 border border-gray-200 hover:bg-gray-100 hover:shadow-sm'
+                                                }`}
+                                        >
+                                            <p className="font-medium text-sm text-gray-900 truncate">{sale.memberName}</p>
+                                            <p className="text-xs text-indigo-600 font-medium mt-1">₱{sale.totalAmount.toFixed(2)}</p>
+                                            <p className="text-xs text-gray-400 mt-1">...{sale.id.slice(-4)}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-gray-500 text-sm text-center py-4">No open sales</p>
+                            )}
+                        </div>
                     </div>
-                    <div className="bg-white p-6 rounded-2xl shadow-lg">
-                        <h3 className="text-xl font-bold text-gray-800 mb-4">Currently Checked-in</h3>
-                        {activeCheckins.length > 0 ? <ul className="space-y-2">{activeCheckins.map(ci => (<li key={ci.id} className="flex justify-between items-center text-gray-700"><span className="font-semibold">{ci.memberName}</span> <span>at <span className="font-mono">{new Date(ci.checkinTimestamp).toLocaleTimeString()}</span></span> <button onClick={() => handleMemberCheckOut(ci.id)} className="bg-red-100 text-red-700 text-xs font-bold py-1 px-2 rounded hover:bg-red-200">Checkout</button></li>))}</ul> : <p className="text-gray-500">No members currently checked in.</p>}
+
+                    {/* Currently Checked-in Card */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="p-5 border-b border-gray-50">
+                            <h3 className="text-lg font-semibold text-gray-900">Active Check-ins</h3>
+                        </div>
+                        <div className="p-5">
+                            {activeCheckins.length > 0 ? (
+                                <div className="space-y-3">
+                                    {activeCheckins.map(ci => (
+                                        <div key={ci.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                            <div>
+                                                <p className="font-medium text-sm text-gray-900">{ci.memberName}</p>
+                                                <p className="text-xs text-gray-500">Since {new Date(ci.checkinTimestamp).toLocaleTimeString()}</p>
+                                            </div>
+                                            <button
+                                                onClick={() => handleMemberCheckOut(ci.id)}
+                                                className="bg-red-50 text-red-600 text-xs font-medium py-1.5 px-3 rounded-md hover:bg-red-100 transition-colors"
+                                            >
+                                                Check Out
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            ) : (
+                                <p className="text-gray-500 text-sm text-center py-4">No active check-ins</p>
+                            )}
+                        </div>
                     </div>
                 </div>
                 <div className="lg:col-span-1">
                     {activeSale ? (
-                    <div className="bg-white p-6 rounded-2xl shadow-lg sticky top-8" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-gray-800">Active Sale</h3><button onClick={() => setActiveSale(null)} className="text-sm text-gray-500 hover:text-red-600">Close</button></div>
-                        <p className="mb-2"><strong>Client:</strong> {activeSale.memberName}</p>
-                        {activeSale.memberId === null && <div className="relative mb-4"><input type="text" placeholder="Assign to member..." value={assignMemberSearch} onChange={e => setAssignMemberSearch(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg"/>{assignableMembers.length > 0 && <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">{assignableMembers.map(member => <li key={member.id} onClick={() => handleAssignMemberToSale(member)} className="p-2 hover:bg-indigo-50 cursor-pointer">{formatMemberFullName(member)}</li>)}</ul>}</div>}
-                        <ul className="space-y-2 mb-4 max-h-60 overflow-y-auto">{activeSale.items.map((item, index) => (<li key={index} className="flex justify-between items-center text-sm"><span>{item.name} x{item.qty}</span><span className="font-mono">₱{(item.price * item.qty).toFixed(2)}</span><button onClick={() => handleCancelItem(index)} className="text-red-500 font-bold text-xs ml-2">X</button></li>))}</ul>
-                        <div className="border-t pt-4 flex justify-between items-center"><p className="text-lg font-bold">Total:</p><p className="text-2xl font-bold text-[var(--primary-color)]">₱{activeSale.totalAmount.toFixed(2)}</p></div>
-                        <textarea value={saleNote} onChange={e => setSaleNote(e.target.value)} placeholder="Add a note to the sale..." className="w-full p-2 border border-gray-300 rounded-lg mt-4 text-sm"></textarea>
-                        <div className="mt-2 space-y-3">
-                            <button onClick={() => setPaymentModalOpen(true)} className="w-full bg-green-500 text-white font-bold py-3 rounded-lg hover:bg-green-600 transition">Process Payment</button>
-                            <button onClick={handleVoidSale} className="w-full bg-[var(--accent-color)] text-white font-bold py-2 rounded-lg hover:opacity-90 transition-opacity text-sm">Void Sale</button>
+                        <div className="bg-white p-6 rounded-2xl shadow-lg sticky top-8" onClick={e => e.stopPropagation()}>
+                            <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-gray-800">Active Sale</h3><button onClick={() => setActiveSale(null)} className="text-sm text-gray-500 hover:text-red-600">Close</button></div>
+                            <p className="mb-2"><strong>Client:</strong> {activeSale.memberName}</p>
+                            {activeSale.memberId === null && <div className="relative mb-4"><input type="text" placeholder="Assign to member..." value={assignMemberSearch} onChange={e => setAssignMemberSearch(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg" />{assignableMembers.length > 0 && <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">{assignableMembers.map(member => <li key={member.id} onClick={() => handleAssignMemberToSale(member)} className="p-2 hover:bg-indigo-50 cursor-pointer">{formatMemberFullName(member)}</li>)}</ul>}</div>}
+                            <ul className="space-y-2 mb-4 max-h-60 overflow-y-auto">{activeSale.items.map((item, index) => (<li key={index} className="flex justify-between items-center text-sm"><span>{item.name} x{item.qty}</span><span className="font-mono">₱{(item.price * item.qty).toFixed(2)}</span><button onClick={() => handleCancelItem(index)} className="text-red-500 font-bold text-xs ml-2">X</button></li>))}</ul>
+                            <div className="border-t pt-4 flex justify-between items-center"><p className="text-lg font-bold">Total:</p><p className="text-2xl font-bold text-[var(--primary-color)]">₱{activeSale.totalAmount.toFixed(2)}</p></div>
+                            <textarea value={saleNote} onChange={e => setSaleNote(e.target.value)} placeholder="Add a note to the sale..." className="w-full p-2 border border-gray-300 rounded-lg mt-4 text-sm"></textarea>
+                            <div className="mt-2 space-y-3">
+                                <button onClick={() => setPaymentModalOpen(true)} className="w-full bg-green-500 text-white font-bold py-3 rounded-lg hover:bg-green-600 transition">Process Payment</button>
+                                <button onClick={handleVoidSale} className="w-full bg-[var(--accent-color)] text-white font-bold py-2 rounded-lg hover:opacity-90 transition-opacity text-sm">Void Sale</button>
+                            </div>
                         </div>
-                    </div>
                     ) : <div className="bg-white p-6 rounded-2xl shadow-lg text-center"><p className="text-gray-500">Select an open sale or scan/search a product to begin.</p></div>}
                 </div>
             </div>
@@ -808,7 +1038,7 @@ const DashboardAnalytics = ({ members, sales, checkIns }) => {
 
         const activeMembers = members.filter(m => getOverallMemberStatus(m.activeServices).text === 'Active').length;
         const expiringSoon = members.filter(m => getOverallMemberStatus(m.activeServices).text === 'Expiring Soon').length;
-        
+
         const checkedInTodayIds = new Set();
         checkIns.forEach(ci => {
             if (new Date(ci.checkinTimestamp).getTime() >= todayStart) {
@@ -839,7 +1069,8 @@ const DashboardAnalytics = ({ members, sales, checkIns }) => {
     );
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+            style={{ gridTemplateColumns: 'repeat(4, minmax(0, 1fr))' }}>
             <StatCard title="Active Members" value={analytics.activeMembers} icon={<Icons.Members />} />
             <StatCard title="Expiring Soon" value={analytics.expiringSoon} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
             <StatCard title="Checked-in Today" value={analytics.checkedInToday} icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>} />
@@ -941,12 +1172,12 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
     const [searchTerm, setSearchTerm] = useState('');
 
     const handleSaveMember = async (memberData, memberId, originalServices) => {
-        const dataToSave = { 
+        const dataToSave = {
             ...memberData,
             id: memberId || Date.now().toString(),
         };
         await dbAction('members', 'readwrite', (store) => store.put(dataToSave));
-        
+
         const newServices = memberData.activeServices.filter(s => !originalServices.some(os => os.purchaseDate === s.purchaseDate && os.serviceId === s.serviceId));
         const paidNewServices = newServices.filter(s => {
             const serviceDef = services.find(service => service.id === s.serviceId);
@@ -954,7 +1185,7 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
         });
 
         if (paidNewServices.length > 0) {
-             if (!activeShift) {
+            if (!activeShift) {
                 showNotification('Cannot create a sale for new services without an active shift.', 'error');
             } else {
                 const totalAmount = paidNewServices.reduce((sum, s) => {
@@ -984,7 +1215,7 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
                 showNotification('Unpaid sale created for new services. Please process payment on the dashboard.', 'info');
             }
         }
-        
+
         if (memberId) {
             setMembers(prev => prev.map(m => m.id === memberId ? dataToSave : m));
             showNotification('Member updated!', 'success');
@@ -996,7 +1227,7 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
         }
         setEditingMember(null);
     };
-    
+
     const handleDeleteMember = async (memberId) => {
         const memberToDelete = members.find(m => m.id === memberId);
         await dbAction('members', 'readwrite', (store) => store.delete(memberId));
@@ -1016,12 +1247,12 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
     const filteredMembers = useMemo(() => {
         return sortedMembers.filter(member => {
             const status = getOverallMemberStatus(member.activeServices).text;
-            const matchesFilter = 
+            const matchesFilter =
                 filter === 'All' ||
                 (filter === 'Paused' && status === 'Paused') ||
                 (filter === 'Almost Expired' && status === 'Expiring Soon') ||
                 (filter === 'No Active' && (status === 'No Active Services' || status === 'All Expired'));
-            
+
             const matchesSearch = searchTerm === '' ||
                 formatMemberFullName(member).toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (member.nickname && member.nickname.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -1036,8 +1267,8 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
             {viewingId && <IDModal id={viewingId.id} title={`ID for ${viewingId.firstName}`} onClose={() => setViewingId(null)} />}
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">Manage Members</h2>
-                <button 
-                    onClick={() => setEditingMember({ activeServices: [] })} 
+                <button
+                    onClick={() => setEditingMember({ activeServices: [] })}
                     className="bg-[var(--primary-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:bg-gray-400 disabled:cursor-not-allowed"
                     disabled={!activeShift}
                     title={!activeShift ? "Please start a shift to add new members" : "Add New Member"}
@@ -1052,7 +1283,7 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
                     <button onClick={() => setFilter('Almost Expired')} className={`px-4 py-1 rounded-md text-sm font-semibold ${filter === 'Almost Expired' ? 'bg-white shadow' : ''}`}>Almost Expired</button>
                     <button onClick={() => setFilter('No Active')} className={`px-4 py-1 rounded-md text-sm font-semibold ${filter === 'No Active' ? 'bg-white shadow' : ''}`}>No Active/Expired</button>
                 </div>
-                <input type="text" placeholder="Search members..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="p-2 border border-gray-300 rounded-lg"/>
+                <input type="text" placeholder="Search members..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="p-2 border border-gray-300 rounded-lg" />
             </div>
             <ul className="space-y-3 mt-6">{filteredMembers.map(member => (<MemberListItem key={member.id} member={member} onEdit={() => setEditingMember(member)} onDeleteMember={handleDeleteMember} onViewId={() => setViewingId(member)} />))}</ul>
         </div>
@@ -1071,25 +1302,25 @@ const MemberForm = ({ member, onSave, onCancel, services, addLog }) => {
         const service = services.find(s => s.id === selectedService);
         if (!service) return;
         const expiryDate = getExpiryDate(startDate, service.durationValue, service.durationUnit);
-        const newService = { 
-            serviceId: service.id, 
-            serviceName: service.name, 
-            purchaseDate: new Date(startDate).toISOString(), 
-            expiryDate: expiryDate, 
+        const newService = {
+            serviceId: service.id,
+            serviceName: service.name,
+            purchaseDate: new Date(startDate).toISOString(),
+            expiryDate: expiryDate,
             status: 'active',
             pauseHistory: [],
-            notes: service.price <= 0 ? 'Complimentary' : '' 
+            notes: service.price <= 0 ? 'Complimentary' : ''
         };
         setFormData(prev => ({ ...prev, activeServices: [...prev.activeServices, newService] }));
     };
     const handleRemoveService = (indexToRemove) => {
-        setFormData(prev => ({...prev, activeServices: prev.activeServices.filter((_, index) => index !== indexToRemove)}));
+        setFormData(prev => ({ ...prev, activeServices: prev.activeServices.filter((_, index) => index !== indexToRemove) }));
     };
 
     const handlePauseService = (serviceIndex, pauseData) => {
         const updatedServices = [...formData.activeServices];
         const service = updatedServices[serviceIndex];
-        
+
         const newExpiryDate = new Date(service.expiryDate);
         newExpiryDate.setDate(newExpiryDate.getDate() + pauseData.duration);
 
@@ -1106,7 +1337,7 @@ const MemberForm = ({ member, onSave, onCancel, services, addLog }) => {
         addLog(`Paused service "${service.serviceName}" for ${formatMemberFullName(formData)} for ${pauseData.duration} days. Reason: ${pauseData.reason}`);
         setServiceToPause(null);
     };
-    
+
     const handleResumeService = (serviceIndex) => {
         const updatedServices = [...formData.activeServices];
         const service = updatedServices[serviceIndex];
@@ -1134,7 +1365,7 @@ const MemberForm = ({ member, onSave, onCancel, services, addLog }) => {
                     <input name="phone" type="tel" value={formData.phone} onChange={handleChange} placeholder="Phone Number" className="w-full p-2 border rounded" />
                 </div>
                 <div className="border-t pt-4"><h4 className="text-lg font-semibold mb-2">Manage Services</h4>
-                    <ul className="space-y-1 mb-4 max-h-32 overflow-y-auto">{formData.activeServices?.map((s, i) => 
+                    <ul className="space-y-1 mb-4 max-h-32 overflow-y-auto">{formData.activeServices?.map((s, i) =>
                         <li key={i} className="flex justify-between items-center text-sm bg-gray-100 p-2 rounded">
                             <div>
                                 <strong>{s.serviceName}</strong>
@@ -1142,7 +1373,7 @@ const MemberForm = ({ member, onSave, onCancel, services, addLog }) => {
                                 <p className="text-xs">Start: {new Date(s.purchaseDate).toLocaleDateString()} - End: {s.expiryDate ? new Date(s.expiryDate).toLocaleDateString() : 'N/A'}</p>
                             </div>
                             <div className="flex items-center gap-2">
-                                {s.status === 'active' ? 
+                                {s.status === 'active' ?
                                     <button type="button" onClick={() => setServiceToPause(i)} className="text-xs bg-yellow-500 text-white px-2 py-1 rounded">Pause</button> :
                                     <button type="button" onClick={() => handleResumeService(i)} className="text-xs bg-green-500 text-white px-2 py-1 rounded">Resume</button>
                                 }
@@ -1150,7 +1381,7 @@ const MemberForm = ({ member, onSave, onCancel, services, addLog }) => {
                             </div>
                         </li>)}
                     </ul>
-                    <div className="flex items-center gap-2"><select value={selectedService} onChange={e => setSelectedService(e.target.value)} className="flex-grow p-2 border rounded bg-white"><option value="">Select a service to add...</option>{services.map(s => <option key={s.id} value={s.id}>{s.name} (₱{s.price})</option>)}</select><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-2 border rounded" /><button type="button" onClick={handleAddService} className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"><Icons.Add/></button></div>
+                    <div className="flex items-center gap-2"><select value={selectedService} onChange={e => setSelectedService(e.target.value)} className="flex-grow p-2 border rounded bg-white"><option value="">Select a service to add...</option>{services.map(s => <option key={s.id} value={s.id}>{s.name} (₱{s.price})</option>)}</select><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="p-2 border rounded" /><button type="button" onClick={handleAddService} className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"><Icons.Add /></button></div>
                 </div>
                 <div className="flex justify-end space-x-3 pt-4"><button type="button" onClick={onCancel} className="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Cancel</button><button type="submit" className="bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Save</button></div>
             </form>
@@ -1200,7 +1431,7 @@ const MemberListItem = ({ member, onEdit, onDeleteMember, onViewId }) => {
                 <p className="font-bold text-lg">{member.lastName}, {member.firstName} {member.middleInitial}</p>
                 <p className="text-sm text-gray-600">{member.nickname ? `(${member.nickname})` : ''} {member.email} {member.phone ? `| ${member.phone}` : ''}</p>
                 <div className="text-xs mt-1 flex flex-col items-start">
-                    {member.activeServices?.map((s, i) => 
+                    {member.activeServices?.map((s, i) =>
                         <span key={i} className="bg-gray-200 px-2 py-0.5 rounded-full mt-1">
                             {s.serviceName} (Start: {new Date(s.purchaseDate).toLocaleDateString()} - End: {s.expiryDate ? new Date(s.expiryDate).toLocaleDateString() : 'N/A'})
                             {s.status === 'paused' && <span className="font-semibold text-yellow-800 ml-1">(Paused)</span>}
@@ -1266,12 +1497,12 @@ const InventoryTab = ({ inventory, showNotification, masterPassword, setInventor
     };
     return (
         <div className="bg-white p-8 rounded-2xl shadow-lg">
-            {passwordModal.isOpen && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={() => setPasswordModal({isOpen: false, action: null})} />}
+            {passwordModal.isOpen && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={() => setPasswordModal({ isOpen: false, action: null })} />}
             {editingItem && <InventoryForm item={editingItem} onSave={(data, id) => withPasswordProtection(() => handleSaveItem(data, id))} onCancel={() => setEditingItem(null)} />}
             {viewingId && <IDModal id={viewingId.id} title={`ID for ${viewingId.name}`} onClose={() => setViewingId(null)} />}
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">Manage Inventory</h2>
-                {isAdmin && <button onClick={() => withPasswordProtection(() => setEditingItem({isUnlimited: false}))} className="bg-[var(--primary-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity">+ Add Item</button>}
+                {isAdmin && <button onClick={() => withPasswordProtection(() => setEditingItem({ isUnlimited: false }))} className="bg-[var(--primary-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity">+ Add Item</button>}
             </div>
             <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th><th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th></tr></thead><tbody className="bg-white divide-y divide-gray-200">{inventory.map(item => (<InventoryListItem key={item.id} item={item} onEdit={() => withPasswordProtection(() => setEditingItem(item))} onDeleteItem={() => withPasswordProtection(() => handleDeleteItem(item.id))} onViewId={() => setViewingId(item)} isAdmin={isAdmin} />))}</tbody></table></div>
         </div>
@@ -1309,7 +1540,7 @@ const InventoryListItem = ({ item, onEdit, onDeleteItem, onViewId, isAdmin }) =>
             {item.isUnlimited ? <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Unlimited</span> : <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${item.quantity > 10 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.quantity}</span>}
         </td>
         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-            <button onClick={onViewId} className="p-2 text-gray-500 hover:text-indigo-600 rounded-full" title="View Item ID"><Icons.IDCard/></button>
+            <button onClick={onViewId} className="p-2 text-gray-500 hover:text-indigo-600 rounded-full" title="View Item ID"><Icons.IDCard /></button>
             {isAdmin && <>
                 <button onClick={onEdit} className="p-2 text-gray-500 hover:text-blue-600 rounded-full" title="Edit Item"><Icons.Edit /></button>
                 <button onClick={onDeleteItem} className="p-2 text-gray-500 hover:text-red-600 rounded-full" title="Delete Item"><Icons.Delete /></button>
@@ -1331,7 +1562,7 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
     const handleDateChange = (e) => {
         setDateRange(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
-    
+
     const filteredData = useMemo(() => {
         let start, end;
         if (isAdmin) {
@@ -1351,7 +1582,7 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
             const saleDate = new Date(s.saleDate);
             return saleDate >= start && saleDate <= end;
         });
-        
+
         let filteredShifts = shifts.filter(sh => {
             if (sh.status !== 'completed') return false;
             const shiftDate = new Date(sh.endTime);
@@ -1366,7 +1597,7 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
             const expenseDate = new Date(ex.timestamp);
             return expenseDate >= start && expenseDate <= end;
         });
-        
+
         if (!isAdmin) {
             const staffShiftsToday = shifts.filter(s => {
                 const shiftDate = new Date(s.startTime); // Use start time to include active shift
@@ -1412,7 +1643,7 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
         }
         setSortConfig({ key, direction });
     };
-    
+
     const handleRefund = async (saleToRefund) => {
         const refundAmount = -saleToRefund.totalAmount;
         const newRefundSale = {
@@ -1429,15 +1660,15 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
         for (const item of saleToRefund.items) {
             const originalItem = inventory.find(i => i.id === item.id);
             if (originalItem && !originalItem.isUnlimited) {
-                const updatedInventoryItem = {...originalItem, quantity: originalItem.quantity + item.qty};
+                const updatedInventoryItem = { ...originalItem, quantity: originalItem.quantity + item.qty };
                 await dbAction('inventory', 'readwrite', (store) => store.put(updatedInventoryItem));
                 setInventory(prev => prev.map(i => i.id === originalItem.id ? updatedInventoryItem : i));
             }
         }
-        
+
         await dbAction('sales', 'readwrite', (store) => store.add(newRefundSale));
         setSales(prev => [...prev, newRefundSale]);
-        
+
         await addLog(`Processed refund for sale ${saleToRefund.id.slice(-4)} amounting to ₱${saleToRefund.totalAmount.toFixed(2)}`);
         showNotification('Sale refunded successfully.', 'success');
     };
@@ -1484,7 +1715,7 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
                 loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
                 loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
             ]);
-            
+
             const { jsPDF } = window.jspdf;
             const input = document.getElementById('printableArea');
 
@@ -1499,7 +1730,7 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
             const height = width / ratio;
 
             pdf.addImage(imgData, 'PNG', 10, 10, width, height);
-            
+
             const date = new Date().toISOString().split('T')[0];
             pdf.save(`${reportType}-report-${date}.pdf`);
             showNotification('PDF downloaded successfully!', 'success');
@@ -1522,7 +1753,7 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
     };
 
     const reportTitles = { sales: 'Sales Report', shifts: 'End-of-Shift Report', cashflow: 'Cash Flow Report', performance: 'Staff Performance' };
-    
+
     return (
         <div className="bg-white p-8 rounded-2xl shadow-lg">
             <div className="print:hidden">
@@ -1558,7 +1789,7 @@ const SalesReport = ({ data, requestSort, sortConfig, onRefund, onReprint }) => 
     const totalRevenue = data.reduce((sum, sale) => sum + sale.totalAmount, 0);
     const totalCash = data.reduce((sum, sale) => sum + (sale.cashPaid || 0), 0);
     const totalOnline = data.reduce((sum, sale) => sum + (sale.onlinePaid || 0), 0);
-    
+
     const getSortIcon = (key) => {
         if (sortConfig.key !== key) return null;
         return sortConfig.direction === 'asc' ? <Icons.SortAsc /> : <Icons.SortDesc />;
@@ -1690,8 +1921,8 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
 
     const withPasswordProtection = (action) => {
         if (!masterPassword || !isAdmin) {
-             if(isAdmin) action();
-             else showNotification("Only admins can perform this action.", "error");
+            if (isAdmin) action();
+            else showNotification("Only admins can perform this action.", "error");
             return;
         }
         setPasswordModal({ isOpen: true, action });
@@ -1815,7 +2046,7 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                 }
 
                 const tx = db.transaction(stores, 'readwrite');
-                
+
                 for (const storeName of stores) {
                     const store = tx.objectStore(storeName);
                     store.clear();
@@ -1830,7 +2061,7 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                     addLog('Restored data from a backup file.');
                     setTimeout(() => window.location.reload(), 2000);
                 };
-                
+
                 tx.onerror = (event) => {
                     throw new Error('Transaction failed during restore: ' + event.target.error);
                 };
@@ -1843,7 +2074,7 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
         };
         reader.readAsText(restoreFile);
     };
-    
+
     const handleConnectPrinter = async () => {
         try {
             const device = await navigator.bluetooth.requestDevice({
@@ -1895,7 +2126,7 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                     onCancel={() => setIsRestoreModalVisible(false)}
                 />
             )}
-            {passwordModal.isOpen && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={() => setPasswordModal({isOpen: false, action: null})} />}
+            {passwordModal.isOpen && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={() => setPasswordModal({ isOpen: false, action: null })} />}
             {editingService && <ServiceForm service={editingService} onSave={(data, id) => withPasswordProtection(() => handleSaveService(data, id))} onCancel={() => setEditingService(null)} />}
             {userModalOpen && <UserFormModal onCancel={() => setUserModalOpen(false)} onConfirm={handleAddUser} />}
 
@@ -1916,7 +2147,7 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Logo</label>
-                        <input type="file" onChange={handleLogoUpload} accept="image/*" className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                        <input type="file" onChange={handleLogoUpload} accept="image/*" className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700">Primary Color</label>
@@ -1927,12 +2158,12 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                         <input type="color" name="accentColor" value={localBranding.accentColor} onChange={handleBrandingChange} className="w-full h-10 p-1 border rounded" />
                     </div>
                 </div>
-                 <button onClick={handleSaveBranding} className="mt-4 bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Save Branding</button>
+                <button onClick={handleSaveBranding} className="mt-4 bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Save Branding</button>
             </div>}
 
             {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
                 <h3 className="text-xl font-bold text-gray-700 mb-4">Hardware</h3>
-                 {!isWebBluetoothSupported && <p className="text-red-500 text-sm">Web Bluetooth is not supported on this browser. Please use Chrome or Edge.</p>}
+                {!isWebBluetoothSupported && <p className="text-red-500 text-sm">Web Bluetooth is not supported on this browser. Please use Chrome or Edge.</p>}
                 <div className="flex items-center gap-4">
                     <button onClick={handleConnectPrinter} disabled={!isWebBluetoothSupported} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Connect to Printer</button>
                     {printerCharacteristic ? <span className="text-green-600 font-semibold">Printer Connected</span> : <span className="text-gray-500">No printer connected</span>}
@@ -1951,11 +2182,11 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                     <input type="file" ref={restoreInputRef} onChange={handleRestoreFileSelect} className="hidden" accept=".json" />
                 </div>
             </div>}
-            
-             {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
+
+            {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
                 <h3 className="text-xl font-bold text-gray-700 mb-2">User Management</h3>
                 <button onClick={() => setUserModalOpen(true)} className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 mb-4">+ Add New User</button>
-                 <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Name</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th></tr></thead><tbody className="bg-white divide-y divide-gray-200">{systemUsers.map(u => (<tr key={u.id}><td className="px-6 py-4 whitespace-nowrap">{u.fullName}</td><td className="px-6 py-4 whitespace-nowrap">{u.username}</td><td className="px-6 py-4 whitespace-nowrap">{u.role}</td></tr>))}</tbody></table></div>
+                <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Name</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th></tr></thead><tbody className="bg-white divide-y divide-gray-200">{systemUsers.map(u => (<tr key={u.id}><td className="px-6 py-4 whitespace-nowrap">{u.fullName}</td><td className="px-6 py-4 whitespace-nowrap">{u.username}</td><td className="px-6 py-4 whitespace-nowrap">{u.role}</td></tr>))}</tbody></table></div>
             </div>}
         </div>
     );
@@ -2038,7 +2269,7 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
 
     useEffect(() => {
         if (type === 'start') {
-            const lastShift = [...shifts].filter(s => s.status === 'completed').sort((a,b) => new Date(b.endTime) - new Date(a.endTime))[0];
+            const lastShift = [...shifts].filter(s => s.status === 'completed').sort((a, b) => new Date(b.endTime) - new Date(a.endTime))[0];
             if (lastShift && lastShift.actualCash) {
                 setStartingCash(lastShift.actualCash.toFixed(2));
             }
@@ -2062,7 +2293,7 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
         const cashExpenses = shiftExpenses.filter(ex => ex.type === 'Cash Drawer').reduce((sum, ex) => sum + ex.amount, 0);
         const cashIns = shiftExpenses.filter(ex => ex.type === 'Cash In').reduce((sum, ex) => sum + ex.amount, 0);
         const expectedCash = (activeShift.startingCash + cashSales + cashIns) - cashExpenses;
-        
+
         const updatedShift = { ...activeShift, endTime: new Date().toISOString(), status: 'completed', cashSales, cashOut: cashExpenses, cashIn: cashIns, actualCash: parseFloat(actualCash), expectedCash, difference: parseFloat(actualCash) - expectedCash };
         await dbAction('shifts', 'readwrite', (store) => store.put(updatedShift));
         setShifts(prev => prev.map(s => s.id === activeShift.id ? updatedShift : s));
@@ -2070,7 +2301,7 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
         showNotification('Shift ended successfully!', 'success');
         onCancel();
     };
-    
+
     const handleAddLateExpense = async (expenseData) => {
         const newExpense = {
             ...expenseData,
@@ -2122,22 +2353,22 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
                         <p><strong>Total Cash Sales:</strong> ₱{cashSales.toFixed(2)}</p>
                         <p><strong>Total Online Sales:</strong> ₱{onlineSales.toFixed(2)}</p>
                         <div className="border-t pt-2 mt-2">
-                           <h4 className="font-semibold mb-1">Cash Movements:</h4>
-                           {shiftExpenses.length > 0 ? (
-                               <ul className="text-xs list-disc pl-5">
-                                   {shiftExpenses.map(ex => (
-                                       <li key={ex.id} className={ex.type === 'Cash In' ? 'text-green-600' : 'text-red-600'}>
-                                           {ex.type}: {ex.note}: ₱{ex.amount.toFixed(2)} {ex.addedDuringClose && "(Added Late)"}
-                                       </li>
-                                   ))}
-                               </ul>
-                           ) : <p className="text-xs text-gray-500">No cash movements recorded.</p>}
-                           <p className="font-bold text-right">Total Cash In: <span className="text-green-600">₱{cashIn.toFixed(2)}</span></p>
-                           <p className="font-bold text-right">Total Cash Out: <span className="text-red-600">₱{cashOut.toFixed(2)}</span></p>
-                           <button type="button" onClick={() => setExpenseModalOpen(true)} className="text-xs bg-gray-200 px-2 py-1 rounded mt-1 hover:bg-gray-300">Add Late Expense</button>
+                            <h4 className="font-semibold mb-1">Cash Movements:</h4>
+                            {shiftExpenses.length > 0 ? (
+                                <ul className="text-xs list-disc pl-5">
+                                    {shiftExpenses.map(ex => (
+                                        <li key={ex.id} className={ex.type === 'Cash In' ? 'text-green-600' : 'text-red-600'}>
+                                            {ex.type}: {ex.note}: ₱{ex.amount.toFixed(2)} {ex.addedDuringClose && "(Added Late)"}
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : <p className="text-xs text-gray-500">No cash movements recorded.</p>}
+                            <p className="font-bold text-right">Total Cash In: <span className="text-green-600">₱{cashIn.toFixed(2)}</span></p>
+                            <p className="font-bold text-right">Total Cash Out: <span className="text-red-600">₱{cashOut.toFixed(2)}</span></p>
+                            <button type="button" onClick={() => setExpenseModalOpen(true)} className="text-xs bg-gray-200 px-2 py-1 rounded mt-1 hover:bg-gray-300">Add Late Expense</button>
                         </div>
                         <p className="font-bold pt-2 border-t mt-2"><strong>Expected Cash in Drawer:</strong> ₱{expectedCash.toFixed(2)}</p>
-                         <div>
+                        <div>
                             <label className="block font-medium text-gray-700">Actual Cash Counted</label>
                             <input type="number" step="0.01" value={actualCash} onChange={e => setActualCash(e.target.value)} className="w-full p-2 border rounded mt-1" required />
                         </div>
@@ -2229,7 +2460,7 @@ const CashInModal = ({ onCancel, onConfirm }) => {
 
 
 const LogsTab = ({ logs }) => {
-    const sortedLogs = [...logs].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const sortedLogs = [...logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     return (
         <div className="bg-white p-8 rounded-2xl shadow-lg">
             <h2 className="text-2xl font-bold text-gray-800 mb-4">System Logs</h2>
