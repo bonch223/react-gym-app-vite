@@ -839,6 +839,8 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
 
     const handleProcessPayment = async (paymentDetails) => {
         if (!activeSale) return;
+        
+        // Process payment - this completes regardless of printer connection status
         const updatedSale = {
             ...activeSale,
             status: 'Paid',
@@ -852,11 +854,15 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
         await addLog(`Sale ${activeSale.id.slice(-4)} for ₱${activeSale.totalAmount.toFixed(2)} paid via ${paymentDetails.method}.`);
         showNotification(`Sale marked as Paid.`, 'success');
 
-        // Print receipt using queue system
+        // Queue receipt for printing (optional - only if printer is connected)
         if (printerCharacteristic) {
             const receiptData = generateReceipt(updatedSale, branding);
             addToPrintQueue(receiptData, `Receipt #${updatedSale.id.slice(-4)}`);
             addLog(`Queued receipt for sale ${updatedSale.id.slice(-4)} for printing.`);
+        } else {
+            // Notify user that receipt wasn't printed but payment was successful
+            showNotification('Payment completed. No printer connected - receipt not printed.', 'info');
+            addLog(`Payment completed for sale ${updatedSale.id.slice(-4)} but receipt not printed (no printer connected).`);
         }
 
         setActiveSale(null);
