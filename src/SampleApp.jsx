@@ -318,8 +318,8 @@ const LoginScreen = ({ setCurrentUser }) => {
                             <circle cx="12" cy="12" r="1.5" />
                         </svg>
                     </div>
-                    <h1 className="text-4xl font-extrabold text-gray-800 mb-2">GymFit Pro</h1>
-                    <p className="text-lg text-gray-600 font-medium">Fitness Management System</p>
+                    <h1 className="text-4xl font-extrabold text-gray-800 mb-2">Rage Fitness</h1>
+                    <p className="text-lg text-gray-600 font-medium">Gym Management System</p>
                 </div>
 
                 <div className="card w-full max-w-md shadow-2xl bg-base-100 border border-base-300">
@@ -438,6 +438,9 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
     const [masterPassword, setMasterPassword] = useState(null);
     const [systemUsers, setSystemUsers] = useState([]);
     const [printerCharacteristic, setPrinterCharacteristic] = useState(null);
+    const [availablePrinters, setAvailablePrinters] = useState([]);
+    const [printQueue, setPrintQueue] = useState([]);
+    const [isProcessingQueue, setIsProcessingQueue] = useState(false);
 
 
     // --- Data Fetching Hook ---
@@ -478,6 +481,81 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
         setTimeout(() => setNotification(null), 5000);
     };
 
+    // Print Queue Management
+    const addToPrintQueue = (receiptData, label = 'Receipt') => {
+        const printJob = {
+            id: Date.now().toString(),
+            data: receiptData,
+            label,
+            timestamp: new Date().toISOString(),
+            status: 'queued'
+        };
+        setPrintQueue(prev => [...prev, printJob]);
+        processPrintQueue();
+    };
+
+    const processPrintQueue = async () => {
+        if (isProcessingQueue || printQueue.length === 0 || !printerCharacteristic) {
+            return;
+        }
+
+        setIsProcessingQueue(true);
+        const [currentJob, ...remainingJobs] = printQueue;
+        
+        try {
+            // Update job status to printing
+            setPrintQueue(prev => prev.map(job => 
+                job.id === currentJob.id ? { ...job, status: 'printing' } : job
+            ));
+            
+            // Send to printer based on connection type
+            if (printerCharacteristic.type === 'bluetooth') {
+                await printerCharacteristic.characteristic.writeValue(currentJob.data);
+            } else if (printerCharacteristic.type === 'usb') {
+                await printerCharacteristic.device.transferOut(printerCharacteristic.endpoint, currentJob.data);
+            } else {
+                throw new Error('Unknown printer connection type');
+            }
+            
+            // Remove completed job from queue
+            setPrintQueue(remainingJobs);
+            showNotification(`${currentJob.label} printed successfully`, 'success');
+            
+        } catch (error) {
+            console.error('Print job failed:', error);
+            // Update job status to failed
+            setPrintQueue(prev => prev.map(job => 
+                job.id === currentJob.id ? { ...job, status: 'failed' } : job
+            ));
+            showNotification(`Failed to print ${currentJob.label}`, 'error');
+        } finally {
+            setIsProcessingQueue(false);
+            // Process next job if any
+            if (remainingJobs.length > 0) {
+                setTimeout(() => processPrintQueue(), 500); // Small delay between jobs
+            }
+        }
+    };
+
+    const clearPrintQueue = () => {
+        setPrintQueue([]);
+        setIsProcessingQueue(false);
+    };
+
+    const retryFailedJobs = () => {
+        setPrintQueue(prev => prev.map(job => 
+            job.status === 'failed' ? { ...job, status: 'queued' } : job
+        ));
+        processPrintQueue();
+    };
+
+    // Auto-process queue when printer connects or jobs are added
+    useEffect(() => {
+        if (printerCharacteristic && printQueue.length > 0 && !isProcessingQueue) {
+            processPrintQueue();
+        }
+    }, [printerCharacteristic, printQueue.length]);
+
     const addLog = async (action) => {
         const newLog = { id: Date.now().toString(), action, user: currentUser.username, timestamp: new Date().toISOString() };
         await dbAction('logs', 'readwrite', (store) => store.add(newLog));
@@ -485,6 +563,11 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
     };
 
     const handleLogout = async () => {
+        const activeShift = shifts.find(s => s.status === 'active');
+        if (activeShift) {
+            showNotification('Please end your active shift before logging out.', 'error');
+            return;
+        }
         await addLog('User logged out');
         localStorage.removeItem('gymUser');
         setCurrentUser(null);
@@ -498,14 +581,14 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
             case 'inventory': return <InventoryTab inventory={inventory} showNotification={showNotification} masterPassword={masterPassword} setInventory={setInventory} currentUser={currentUser} addLog={addLog} />;
             case 'reports': return <ReportsTab sales={sales} shifts={shifts} expenses={expenses} members={members} systemUsers={systemUsers} currentUser={currentUser} showNotification={showNotification} setSales={setSales} setInventory={setInventory} addLog={addLog} inventory={inventory} printerCharacteristic={printerCharacteristic} branding={branding} />;
             case 'logs': return <LogsTab logs={logs} />;
-            case 'settings': return <SettingsTab services={services} showNotification={showNotification} masterPassword={masterPassword} setMasterPassword={setMasterPassword} systemUsers={systemUsers} setSystemUsers={setSystemUsers} currentUser={currentUser} setServices={setServices} addLog={addLog} printerCharacteristic={printerCharacteristic} setPrinterCharacteristic={setPrinterCharacteristic} branding={branding} setBranding={setBranding} />;
+            case 'settings': return <SettingsTab services={services} showNotification={showNotification} masterPassword={masterPassword} setMasterPassword={setMasterPassword} systemUsers={systemUsers} setSystemUsers={setSystemUsers} currentUser={currentUser} setServices={setServices} addLog={addLog} printerCharacteristic={printerCharacteristic} setPrinterCharacteristic={setPrinterCharacteristic} branding={branding} setBranding={setBranding} availablePrinters={availablePrinters} setAvailablePrinters={setAvailablePrinters} printQueue={printQueue} clearPrintQueue={clearPrintQueue} retryFailedJobs={retryFailedJobs} isProcessingQueue={isProcessingQueue} />;
             default: return null;
         }
     };
 
     return (
         <div className="bg-gray-100 min-h-screen font-sans">
-            <Header activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={handleLogout} printerConnected={!!printerCharacteristic} branding={branding} />
+        <Header activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={handleLogout} printerConnected={!!printerCharacteristic} branding={branding} printQueue={printQueue} isProcessingQueue={isProcessingQueue} />
             {notification && <Notification message={notification.message} type={notification.type} onClose={() => setNotification(null)} />}
             <main className="container mx-auto p-4 md:p-8">{renderTabContent()}</main>
         </div>
@@ -514,7 +597,7 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
 
 
 // --- Header and Navigation ---
-const Header = ({ activeTab, setActiveTab, user, onLogout, printerConnected, branding }) => {
+const Header = ({ activeTab, setActiveTab, user, onLogout, printerConnected, branding, printQueue = [], isProcessingQueue = false }) => {
     const tabs = [
         { id: 'dashboard', label: 'Dashboard', icon: <Icons.Dashboard /> },
         { id: 'members', label: 'Members', icon: <Icons.Members /> },
@@ -524,13 +607,38 @@ const Header = ({ activeTab, setActiveTab, user, onLogout, printerConnected, bra
         { id: 'settings', label: 'Settings', icon: <Icons.Settings /> },
     ];
 
-    const PrinterStatusIcon = () => (
-        <div title={printerConnected ? "Printer Connected" : "Printer Disconnected"} className="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${printerConnected ? 'text-green-400' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm7-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-            </svg>
-        </div>
-    );
+    const PrinterStatusIcon = () => {
+        const queuedJobs = printQueue.filter(job => job.status === 'queued').length;
+        const failedJobs = printQueue.filter(job => job.status === 'failed').length;
+        
+        return (
+            <div className="flex items-center space-x-2">
+                <div title={printerConnected ? "Printer Connected" : "Printer Disconnected"} className="flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-6 w-6 ${printerConnected ? 'text-green-400' : 'text-gray-500'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm7-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                </div>
+                {isProcessingQueue && (
+                    <div className="flex items-center text-blue-400" title="Printing...">
+                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </div>
+                )}
+                {queuedJobs > 0 && (
+                    <span className="bg-blue-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" title={`${queuedJobs} jobs queued`}>
+                        {queuedJobs}
+                    </span>
+                )}
+                {failedJobs > 0 && (
+                    <span className="bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" title={`${failedJobs} jobs failed`}>
+                        {failedJobs}
+                    </span>
+                )}
+            </div>
+        );
+    };
 
     return (
         <header className="bg-gray-900 text-white shadow-lg print:hidden">
@@ -744,17 +852,11 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
         await addLog(`Sale ${activeSale.id.slice(-4)} for ₱${activeSale.totalAmount.toFixed(2)} paid via ${paymentDetails.method}.`);
         showNotification(`Sale marked as Paid.`, 'success');
 
-        // Print receipt
+        // Print receipt using queue system
         if (printerCharacteristic) {
-            try {
-                const receiptData = generateReceipt(updatedSale, branding);
-                await printerCharacteristic.writeValue(receiptData);
-                showNotification('Receipt sent to printer.', 'info');
-                addLog(`Printed receipt for sale ${updatedSale.id.slice(-4)}.`);
-            } catch (error) {
-                console.error('Printing failed:', error);
-                showNotification('Printing failed. Is the printer on and in range?', 'error');
-            }
+            const receiptData = generateReceipt(updatedSale, branding);
+            addToPrintQueue(receiptData, `Receipt #${updatedSale.id.slice(-4)}`);
+            addLog(`Queued receipt for sale ${updatedSale.id.slice(-4)} for printing.`);
         }
 
         setActiveSale(null);
@@ -1716,15 +1818,9 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
             showNotification('Please connect to a printer in Settings before reprinting.', 'error');
             return;
         }
-        try {
-            const receiptData = generateReceipt(saleToReprint, branding);
-            await printerCharacteristic.writeValue(receiptData);
-            showNotification('Reprinting receipt...', 'info');
-            addLog(`Reprinted receipt for sale ${saleToReprint.id.slice(-4)}.`);
-        } catch (error) {
-            console.error('Reprinting failed:', error);
-            showNotification('Reprinting failed. Is the printer on and in range?', 'error');
-        }
+        const receiptData = generateReceipt(saleToReprint, branding);
+        addToPrintQueue(receiptData, `Reprint #${saleToReprint.id.slice(-4)}`);
+        addLog(`Queued reprint for sale ${saleToReprint.id.slice(-4)}.`);
     };
 
     const loadScript = (src) => {
@@ -1946,10 +2042,11 @@ const StaffPerformanceReport = ({ data, requestSort, sortConfig }) => {
 
 
 // --- Settings Tab ---
-const SettingsTab = ({ services, showNotification, masterPassword, setMasterPassword, systemUsers, setSystemUsers, currentUser, setServices, addLog, printerCharacteristic, setPrinterCharacteristic, branding, setBranding }) => {
+const SettingsTab = ({ services, showNotification, masterPassword, setMasterPassword, systemUsers, setSystemUsers, currentUser, setServices, addLog, printerCharacteristic, setPrinterCharacteristic, branding, setBranding, availablePrinters, setAvailablePrinters, printQueue, clearPrintQueue, retryFailedJobs, isProcessingQueue }) => {
     const [editingService, setEditingService] = useState(null);
     const [passwordModal, setPasswordModal] = useState({ isOpen: false, action: null });
     const [userModalOpen, setUserModalOpen] = useState(false);
+    const [editingUser, setEditingUser] = useState(null);
     const isAdmin = currentUser.role === 'admin';
     const restoreInputRef = useRef(null);
     const [restoreFile, setRestoreFile] = useState(null);
@@ -2022,6 +2119,54 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
         addLog(`Admin ${currentUser.username} created new staff user: ${newUser.username}`);
         showNotification('New staff user created successfully!', 'success');
         setUserModalOpen(false);
+    };
+
+    const handleEditUser = async (userData) => {
+        const adminUser = systemUsers.find(u => u.username === currentUser.username);
+        if (adminUser.password !== userData.adminPassword) {
+            showNotification('Incorrect admin password.', 'error');
+            return;
+        }
+        
+        // Check if username is already taken by another user
+        const existingUser = systemUsers.find(u => u.username === userData.username && u.id !== userData.id);
+        if (existingUser) {
+            showNotification('Username already exists.', 'error');
+            return;
+        }
+
+        const updatedUser = {
+            ...userData,
+            // Don't update role if it's not provided to prevent accidental changes
+            role: userData.role || systemUsers.find(u => u.id === userData.id).role
+        };
+        
+        await dbAction('system_users', 'readwrite', (store) => store.put(updatedUser));
+        setSystemUsers(prev => prev.map(u => u.id === userData.id ? updatedUser : u));
+        addLog(`Admin ${currentUser.username} updated user: ${updatedUser.username}`);
+        showNotification('User updated successfully!', 'success');
+        setEditingUser(null);
+    };
+
+    const handleDeleteUser = async (userId) => {
+        const adminUser = systemUsers.find(u => u.username === currentUser.username);
+        const userToDelete = systemUsers.find(u => u.id === userId);
+        
+        if (!userToDelete) {
+            showNotification('User not found.', 'error');
+            return;
+        }
+        
+        // Prevent deleting the current user if they are admin
+        if (userToDelete.username === currentUser.username && userToDelete.role === 'admin') {
+            showNotification('Cannot delete your own admin account.', 'error');
+            return;
+        }
+        
+        await dbAction('system_users', 'readwrite', (store) => store.delete(userId));
+        setSystemUsers(prev => prev.filter(u => u.id !== userId));
+        addLog(`Admin ${currentUser.username} deleted user: ${userToDelete.username}`);
+        showNotification('User deleted successfully!', 'success');
     };
 
     const handleBackup = async () => {
@@ -2115,19 +2260,166 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
 
     const handleConnectPrinter = async () => {
         try {
-            const device = await navigator.bluetooth.requestDevice({
-                filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }], // Generic Attribute Profile
-            });
-            const server = await device.gatt.connect();
-            const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-            const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
-            setPrinterCharacteristic(characteristic);
-            showNotification(`Connected to ${device.name || 'printer'}!`, 'success');
-            addLog(`Connected to Bluetooth printer: ${device.name || 'Unknown Device'}`);
+            // Show a selection modal for printer type
+            const printerType = await showPrinterSelectionModal();
+            
+            if (printerType === 'bluetooth') {
+                await connectBluetoothPrinter();
+            } else if (printerType === 'usb') {
+                await connectUSBPrinter();
+            }
         } catch (error) {
-            console.error('Bluetooth connection failed:', error);
+            console.error('Printer connection failed:', error);
             showNotification('Failed to connect to printer.', 'error');
         }
+    };
+
+    const showPrinterSelectionModal = () => {
+        return new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center';
+            modal.innerHTML = `
+                <div class="bg-white p-6 rounded-lg shadow-lg max-w-md w-full mx-4">
+                    <h3 class="text-lg font-bold mb-4">Select Printer Type</h3>
+                    <div class="space-y-3">
+                        <button id="bluetooth-btn" class="w-full p-3 text-left border rounded-lg hover:bg-blue-50 ${
+                            typeof navigator.bluetooth !== 'undefined' ? 'border-blue-200' : 'border-gray-300 opacity-50 cursor-not-allowed'
+                        }">
+                            <div class="font-medium">Bluetooth Printer</div>
+                            <div class="text-sm text-gray-600">Connect via Bluetooth (Chrome/Edge required)</div>
+                            ${typeof navigator.bluetooth === 'undefined' ? '<div class="text-xs text-red-500 mt-1">Not supported in this browser</div>' : ''}
+                        </button>
+                        <button id="usb-btn" class="w-full p-3 text-left border rounded-lg hover:bg-green-50 ${
+                            typeof navigator.usb !== 'undefined' ? 'border-green-200' : 'border-gray-300 opacity-50 cursor-not-allowed'
+                        }">
+                            <div class="font-medium">USB Printer</div>
+                            <div class="text-sm text-gray-600">Connect via USB (Chrome/Edge required)</div>
+                            ${typeof navigator.usb === 'undefined' ? '<div class="text-xs text-red-500 mt-1">Not supported in this browser</div>' : ''}
+                        </button>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button id="cancel-btn" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            const bluetoothBtn = modal.querySelector('#bluetooth-btn');
+            const usbBtn = modal.querySelector('#usb-btn');
+            const cancelBtn = modal.querySelector('#cancel-btn');
+            
+            const cleanup = () => {
+                document.body.removeChild(modal);
+            };
+            
+            bluetoothBtn.onclick = () => {
+                if (typeof navigator.bluetooth !== 'undefined') {
+                    cleanup();
+                    resolve('bluetooth');
+                }
+            };
+            
+            usbBtn.onclick = () => {
+                if (typeof navigator.usb !== 'undefined') {
+                    cleanup();
+                    resolve('usb');
+                }
+            };
+            
+            cancelBtn.onclick = () => {
+                cleanup();
+                resolve(null);
+            };
+            
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    cleanup();
+                    resolve(null);
+                }
+            };
+        });
+    };
+
+    const connectBluetoothPrinter = async () => {
+        const device = await navigator.bluetooth.requestDevice({
+            filters: [
+                { services: ['000018f0-0000-1000-8000-00805f9b34fb'] }, // Generic printer service
+                { services: ['0000180a-0000-1000-8000-00805f9b34fb'] }, // Device Information Service
+            ],
+            optionalServices: [
+                '000018f0-0000-1000-8000-00805f9b34fb',
+                '0000180a-0000-1000-8000-00805f9b34fb',
+                '0000180f-0000-1000-8000-00805f9b34fb', // Battery Service
+            ]
+        });
+        
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        const characteristic = await service.getCharacteristic('00002af1-0000-1000-8000-00805f9b34fb');
+        
+        const printerInfo = {
+            type: 'bluetooth',
+            device,
+            characteristic,
+            name: device.name || 'Bluetooth Printer'
+        };
+        
+        setPrinterCharacteristic(printerInfo);
+        showNotification(`Connected to ${printerInfo.name}!`, 'success');
+        addLog(`Connected to Bluetooth printer: ${printerInfo.name}`);
+    };
+
+    const connectUSBPrinter = async () => {
+        const device = await navigator.usb.requestDevice({
+            filters: [
+                { vendorId: 0x04b8 }, // Epson
+                { vendorId: 0x04da }, // Panasonic
+                { vendorId: 0x0519 }, // Star Micronics
+                { vendorId: 0x0a5f }, // Zebra
+                { vendorId: 0x154f }, // SNBC
+                { vendorId: 0x0dd4 }, // Opticon
+                { vendorId: 0x0fe6 }, // ICS Advent
+                { classCode: 7 }      // Printer class
+            ]
+        });
+        
+        await device.open();
+        
+        if (device.configuration === null) {
+            await device.selectConfiguration(1);
+        }
+        
+        // Find the bulk OUT endpoint for printing
+        let endpoint = null;
+        for (const interface_ of device.configuration.interfaces) {
+            await device.claimInterface(interface_.interfaceNumber);
+            for (const alternate of interface_.alternates) {
+                for (const ep of alternate.endpoints) {
+                    if (ep.direction === 'out' && ep.type === 'bulk') {
+                        endpoint = ep.endpointNumber;
+                        break;
+                    }
+                }
+                if (endpoint) break;
+            }
+            if (endpoint) break;
+        }
+        
+        if (!endpoint) {
+            throw new Error('No suitable USB endpoint found for printing');
+        }
+        
+        const printerInfo = {
+            type: 'usb',
+            device,
+            endpoint,
+            name: `${device.manufacturerName || 'USB'} ${device.productName || 'Printer'}`
+        };
+        
+        setPrinterCharacteristic(printerInfo);
+        showNotification(`Connected to ${printerInfo.name}!`, 'success');
+        addLog(`Connected to USB printer: ${printerInfo.name}`);
     };
 
     const handleBrandingChange = (e) => {
@@ -2166,7 +2458,16 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
             )}
             {passwordModal.isOpen && <PasswordModal onConfirm={handlePasswordConfirm} onCancel={() => setPasswordModal({ isOpen: false, action: null })} />}
             {editingService && <ServiceForm service={editingService} onSave={(data, id) => withPasswordProtection(() => handleSaveService(data, id))} onCancel={() => setEditingService(null)} />}
-            {userModalOpen && <UserFormModal onCancel={() => setUserModalOpen(false)} onConfirm={handleAddUser} />}
+            {(userModalOpen || editingUser) && (
+                <UserFormModal 
+                    user={editingUser} 
+                    onCancel={() => {
+                        setUserModalOpen(false);
+                        setEditingUser(null);
+                    }} 
+                    onConfirm={editingUser ? handleEditUser : handleAddUser} 
+                />
+            )}
 
             <div className="bg-white p-8 rounded-2xl shadow-lg">
                 <div className="flex justify-between items-center mb-6">
@@ -2176,7 +2477,110 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                 <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service Name</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th><th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th></tr></thead><tbody className="bg-white divide-y divide-gray-200">{services.map(s => (<ServiceListItem key={s.id} service={s} onEdit={() => withPasswordProtection(() => setEditingService(s))} onDelete={() => withPasswordProtection(() => handleDeleteService(s.id))} isAdmin={isAdmin} />))}</tbody></table></div>
             </div>
 
+            <div className="bg-white p-8 rounded-2xl shadow-lg">
+                <h3 className="text-xl font-bold text-gray-700 mb-4">Hardware</h3>
+                {!isWebBluetoothSupported && <p className="text-red-500 text-sm">Web Bluetooth is not supported on this browser. Please use Chrome or Edge.</p>}
+                <div className="flex items-center gap-4">
+                    <button onClick={handleConnectPrinter} disabled={!isWebBluetoothSupported} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Connect to Printer</button>
+                    {printerCharacteristic ? <span className="text-green-600 font-semibold">Printer Connected</span> : <span className="text-gray-500">No printer connected</span>}
+                </div>
+            </div>
+
+            <div className="bg-white p-8 rounded-2xl shadow-lg">
+                <h3 className="text-xl font-bold text-gray-700 mb-4">Print Queue</h3>
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-4">
+                        <span className="text-sm text-gray-600">
+                            {printQueue.length === 0 ? 'No jobs in queue' : `${printQueue.length} job${printQueue.length > 1 ? 's' : ''} in queue`}
+                        </span>
+                        {isProcessingQueue && <span className="text-blue-600 text-sm font-medium">Processing...</span>}
+                    </div>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => setPrintQueue([])} 
+                            disabled={printQueue.length === 0}
+                            className="bg-red-500 text-white font-bold py-1 px-3 rounded hover:bg-red-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm"
+                        >
+                            Clear Queue
+                        </button>
+                        <button 
+                            onClick={() => setPrintQueue(prev => prev.map(job => ({ ...job, status: 'pending' })))}
+                            disabled={printQueue.filter(job => job.status === 'failed').length === 0}
+                            className="bg-yellow-500 text-white font-bold py-1 px-3 rounded hover:bg-yellow-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-sm"
+                        >
+                            Retry Failed
+                        </button>
+                    </div>
+                </div>
+                
+                {printQueue.length > 0 && (
+                    <div className="overflow-x-auto max-h-64 overflow-y-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Receipt #</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {printQueue.map((job, index) => (
+                                    <tr key={index}>
+                                        <td className="px-4 py-2 text-sm">{job.receiptNumber}</td>
+                                        <td className="px-4 py-2 text-sm">{job.type}</td>
+                                        <td className="px-4 py-2 text-sm">
+                                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                                                job.status === 'completed' ? 'bg-green-100 text-green-800' :
+                                                job.status === 'failed' ? 'bg-red-100 text-red-800' :
+                                                job.status === 'processing' ? 'bg-blue-100 text-blue-800' :
+                                                'bg-yellow-100 text-yellow-800'
+                                            }`}>
+                                                {job.status}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-2 text-sm text-gray-500">
+                                            {new Date(job.timestamp).toLocaleTimeString()}
+                                        </td>
+                                        <td className="px-4 py-2 text-right">
+                                            <button 
+                                                onClick={() => setPrintQueue(prev => prev.filter((_, i) => i !== index))}
+                                                className="text-red-600 hover:text-red-800 text-sm"
+                                                title="Remove from queue"
+                                            >
+                                                Remove
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
             {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
+                <h3 className="text-xl font-bold text-gray-700 mb-4">Data Management</h3>
+                <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded-lg mb-4">
+                    <p className="font-bold">Important:</p>
+                    <p className="text-sm">Regularly back up your data to prevent loss. Restoring from a backup will overwrite all current data.</p>
+                </div>
+                <div className="flex gap-4">
+                    <button onClick={handleBackup} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Backup All Data</button>
+                    <button onClick={() => restoreInputRef.current.click()} className="bg-gray-400 text-white font-bold py-2 px-4 rounded-lg cursor-not-allowed" disabled title="Restore feature coming in a future version.">Restore from Backup</button>
+                    <input type="file" ref={restoreInputRef} onChange={handleRestoreFileSelect} className="hidden" accept=".json" />
+                </div>
+            </div>}
+
+            {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
+                <h3 className="text-xl font-bold text-gray-700 mb-2">User Management</h3>
+                <button onClick={() => setUserModalOpen(true)} className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 mb-4">+ Add New User</button>
+                <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Name</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th><th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th></tr></thead><tbody className="bg-white divide-y divide-gray-200">{systemUsers.map(u => (<UserListItem key={u.id} user={u} currentUser={currentUser} onEdit={setEditingUser} onDelete={(userId) => withPasswordProtection(() => handleDeleteUser(userId))} />))}</tbody></table></div>
+            </div>}
+
+
+                {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
                 <h3 className="text-xl font-bold text-gray-700 mb-4">Branding & Appearance</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
@@ -2199,33 +2603,6 @@ const SettingsTab = ({ services, showNotification, masterPassword, setMasterPass
                 <button onClick={handleSaveBranding} className="mt-4 bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Save Branding</button>
             </div>}
 
-            {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
-                <h3 className="text-xl font-bold text-gray-700 mb-4">Hardware</h3>
-                {!isWebBluetoothSupported && <p className="text-red-500 text-sm">Web Bluetooth is not supported on this browser. Please use Chrome or Edge.</p>}
-                <div className="flex items-center gap-4">
-                    <button onClick={handleConnectPrinter} disabled={!isWebBluetoothSupported} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400">Connect to Printer</button>
-                    {printerCharacteristic ? <span className="text-green-600 font-semibold">Printer Connected</span> : <span className="text-gray-500">No printer connected</span>}
-                </div>
-            </div>}
-
-            {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
-                <h3 className="text-xl font-bold text-gray-700 mb-4">Data Management</h3>
-                <div className="p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded-lg mb-4">
-                    <p className="font-bold">Important:</p>
-                    <p className="text-sm">Regularly back up your data to prevent loss. Restoring from a backup will overwrite all current data.</p>
-                </div>
-                <div className="flex gap-4">
-                    <button onClick={handleBackup} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Backup All Data</button>
-                    <button onClick={() => restoreInputRef.current.click()} className="bg-gray-400 text-white font-bold py-2 px-4 rounded-lg cursor-not-allowed" disabled title="Restore feature coming in a future version.">Restore from Backup</button>
-                    <input type="file" ref={restoreInputRef} onChange={handleRestoreFileSelect} className="hidden" accept=".json" />
-                </div>
-            </div>}
-
-            {isAdmin && <div className="bg-white p-8 rounded-2xl shadow-lg">
-                <h3 className="text-xl font-bold text-gray-700 mb-2">User Management</h3>
-                <button onClick={() => setUserModalOpen(true)} className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600 mb-4">+ Add New User</button>
-                <div className="overflow-x-auto"><table className="min-w-full divide-y divide-gray-200"><thead className="bg-gray-50"><tr><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Name</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Username</th><th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th></tr></thead><tbody className="bg-white divide-y divide-gray-200">{systemUsers.map(u => (<tr key={u.id}><td className="px-6 py-4 whitespace-nowrap">{u.fullName}</td><td className="px-6 py-4 whitespace-nowrap">{u.username}</td><td className="px-6 py-4 whitespace-nowrap">{u.role}</td></tr>))}</tbody></table></div>
-            </div>}
         </div>
     );
 };
@@ -2268,11 +2645,12 @@ const ServiceListItem = ({ service, onEdit, onDelete, isAdmin }) => (
     </tr>
 );
 
-const UserFormModal = ({ onCancel, onConfirm }) => {
-    const [fullName, setFullName] = useState('');
-    const [username, setUsername] = useState('');
+const UserFormModal = ({ onCancel, onConfirm, user = null }) => {
+    const [fullName, setFullName] = useState(user?.fullName || '');
+    const [username, setUsername] = useState(user?.username || '');
     const [password, setPassword] = useState('');
     const [adminPassword, setAdminPassword] = useState('');
+    const isEditing = !!user;
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -2282,10 +2660,10 @@ const UserFormModal = ({ onCancel, onConfirm }) => {
     return (
         <Modal onClose={onCancel}>
             <form onSubmit={handleSubmit} className="space-y-4">
-                <h3 className="text-2xl font-bold text-gray-800 mb-4">Add New Staff User</h3>
+                <h3 className="text-2xl font-bold text-gray-800 mb-4">{isEditing ? 'Edit User' : 'Add New Staff User'}</h3>
                 <input name="fullName" value={fullName} onChange={e => setFullName(e.target.value)} placeholder="Full Name" required className="w-full p-2 border rounded" />
                 <input name="username" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required className="w-full p-2 border rounded" />
-                <input name="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Password" required className="w-full p-2 border rounded" />
+                <input name="password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder={isEditing ? "New Password (leave blank to keep current)" : "Password"} required={!isEditing} className="w-full p-2 border rounded" />
                 <div className="border-t pt-4">
                     <label className="block text-sm font-medium text-gray-700">Admin Password</label>
                     <p className="text-xs text-gray-500 mb-1">Enter your own password to authorize this action.</p>
@@ -2293,7 +2671,7 @@ const UserFormModal = ({ onCancel, onConfirm }) => {
                 </div>
                 <div className="flex justify-end space-x-3 pt-4">
                     <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Cancel</button>
-                    <button type="submit" className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600">Create User</button>
+                    <button type="submit" className="bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600">{isEditing ? 'Update User' : 'Create User'}</button>
                 </div>
             </form>
         </Modal>
@@ -2496,6 +2874,48 @@ const CashInModal = ({ onCancel, onConfirm }) => {
     );
 };
 
+
+const UserListItem = ({ user, currentUser, onEdit, onDelete }) => {
+    const isCurrentUser = user.username === currentUser.username;
+    const canDelete = user.role !== 'admin' || !isCurrentUser; // Can't delete own admin account
+
+    return (
+        <tr>
+            <td className="px-6 py-4 whitespace-nowrap">
+                <div className="text-sm font-medium text-gray-900">{user.fullName}</div>
+                <div className="text-sm text-gray-500">{new Date(user.createdAt).toLocaleDateString()}</div>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap">
+                <div className="text-sm text-gray-900">{user.username}</div>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap">
+                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                    user.role === 'admin' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
+                }`}>
+                    {user.role}
+                </span>
+            </td>
+            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                <button 
+                    onClick={() => onEdit(user)} 
+                    className="p-2 text-gray-500 hover:text-blue-600 rounded-full" 
+                    title="Edit User"
+                >
+                    <Icons.Edit />
+                </button>
+                {canDelete && (
+                    <button 
+                        onClick={() => onDelete(user.id)} 
+                        className="p-2 text-gray-500 hover:text-red-600 rounded-full" 
+                        title="Delete User"
+                    >
+                        <Icons.Delete />
+                    </button>
+                )}
+            </td>
+        </tr>
+    );
+};
 
 const LogsTab = ({ logs }) => {
     const sortedLogs = [...logs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
