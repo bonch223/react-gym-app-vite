@@ -576,7 +576,7 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
     const renderTabContent = () => {
         const activeShift = shifts.find(s => s.status === 'active');
         switch (activeTab) {
-            case 'dashboard': return <DashboardTab members={members} inventory={inventory} sales={sales} checkIns={checkIns} showNotification={showNotification} activeShift={activeShift} addLog={addLog} user={currentUser} setSales={setSales} setInventory={setInventory} setCheckIns={setCheckIns} setShifts={setShifts} setExpenses={setExpenses} expenses={expenses} shifts={shifts} printerCharacteristic={printerCharacteristic} branding={branding} />;
+            case 'dashboard': return <DashboardTab members={members} inventory={inventory} sales={sales} checkIns={checkIns} showNotification={showNotification} activeShift={activeShift} addLog={addLog} user={currentUser} setSales={setSales} setInventory={setInventory} setCheckIns={setCheckIns} setShifts={setShifts} setExpenses={setExpenses} expenses={expenses} shifts={shifts} printerCharacteristic={printerCharacteristic} branding={branding} addToPrintQueue={addToPrintQueue} />;
             case 'members': return <MembersTab members={members} showNotification={showNotification} services={services} setMembers={setMembers} setSales={setSales} activeShift={activeShift} addLog={addLog} />;
             case 'inventory': return <InventoryTab inventory={inventory} showNotification={showNotification} masterPassword={masterPassword} setInventory={setInventory} currentUser={currentUser} addLog={addLog} />;
             case 'reports': return <ReportsTab sales={sales} shifts={shifts} expenses={expenses} members={members} systemUsers={systemUsers} currentUser={currentUser} showNotification={showNotification} setSales={setSales} setInventory={setInventory} addLog={addLog} inventory={inventory} printerCharacteristic={printerCharacteristic} branding={branding} />;
@@ -719,7 +719,7 @@ const ConfirmationModal = ({ title, message, onConfirm, onCancel, confirmText = 
 
 
 // --- Dashboard / POS Tab ---
-const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, activeShift, addLog, user, setSales, setInventory, setCheckIns, setShifts, setExpenses, expenses, shifts, printerCharacteristic, branding }) => {
+const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, activeShift, addLog, user, setSales, setInventory, setCheckIns, setShifts, setExpenses, expenses, shifts, printerCharacteristic, branding, addToPrintQueue }) => {
     const [activeSale, setActiveSale] = useState(null);
     const [inputValue, setInputValue] = useState('');
     const [memberSearch, setMemberSearch] = useState('');
