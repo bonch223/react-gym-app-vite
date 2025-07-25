@@ -579,7 +579,7 @@ const GymManagementSystem = ({ currentUser, setCurrentUser, branding, setBrandin
             case 'dashboard': return <DashboardTab members={members} inventory={inventory} sales={sales} checkIns={checkIns} showNotification={showNotification} activeShift={activeShift} addLog={addLog} user={currentUser} setSales={setSales} setInventory={setInventory} setCheckIns={setCheckIns} setShifts={setShifts} setExpenses={setExpenses} expenses={expenses} shifts={shifts} printerCharacteristic={printerCharacteristic} branding={branding} addToPrintQueue={addToPrintQueue} />;
             case 'members': return <MembersTab members={members} showNotification={showNotification} services={services} setMembers={setMembers} setSales={setSales} activeShift={activeShift} addLog={addLog} />;
             case 'inventory': return <InventoryTab inventory={inventory} showNotification={showNotification} masterPassword={masterPassword} setInventory={setInventory} currentUser={currentUser} addLog={addLog} />;
-            case 'reports': return <ReportsTab sales={sales} shifts={shifts} expenses={expenses} members={members} systemUsers={systemUsers} currentUser={currentUser} showNotification={showNotification} setSales={setSales} setInventory={setInventory} addLog={addLog} inventory={inventory} printerCharacteristic={printerCharacteristic} branding={branding} />;
+            case 'reports': return <ReportsTab sales={sales} shifts={shifts} expenses={expenses} members={members} systemUsers={systemUsers} currentUser={currentUser} showNotification={showNotification} setSales={setSales} setInventory={setInventory} addLog={addLog} inventory={inventory} printerCharacteristic={printerCharacteristic} branding={branding} addToPrintQueue={addToPrintQueue} />;
             case 'logs': return <LogsTab logs={logs} />;
             case 'settings': return <SettingsTab services={services} showNotification={showNotification} masterPassword={masterPassword} setMasterPassword={setMasterPassword} systemUsers={systemUsers} setSystemUsers={setSystemUsers} currentUser={currentUser} setServices={setServices} addLog={addLog} printerCharacteristic={printerCharacteristic} setPrinterCharacteristic={setPrinterCharacteristic} branding={branding} setBranding={setBranding} availablePrinters={availablePrinters} setAvailablePrinters={setAvailablePrinters} printQueue={printQueue} clearPrintQueue={clearPrintQueue} retryFailedJobs={retryFailedJobs} isProcessingQueue={isProcessingQueue} />;
             default: return null;
@@ -731,6 +731,7 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
     const [expenseModalOpen, setExpenseModalOpen] = useState(false);
     const [cashInModalOpen, setCashInModalOpen] = useState(false);
     const inputRef = useRef(null);
+    const inactivityTimerRef = useRef(null);
 
     // Auto-focus the barcode input when clicking outside focusable elements
     useEffect(() => {
@@ -748,6 +749,48 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
 
         document.addEventListener('click', handleDocumentClick);
         return () => document.removeEventListener('click', handleDocumentClick);
+    }, []);
+
+    // Auto-focus barcode input after 5 seconds of inactivity
+    useEffect(() => {
+        const resetInactivityTimer = () => {
+            if (inactivityTimerRef.current) {
+                clearTimeout(inactivityTimerRef.current);
+            }
+            
+            inactivityTimerRef.current = setTimeout(() => {
+                if (inputRef.current && document.activeElement !== inputRef.current) {
+                    inputRef.current.focus();
+                }
+            }, 5000); // 5 seconds
+        };
+
+        const handleUserActivity = () => {
+            resetInactivityTimer();
+        };
+
+        // Listen for user activity events
+        document.addEventListener('mousedown', handleUserActivity);
+        document.addEventListener('mousemove', handleUserActivity);
+        document.addEventListener('keypress', handleUserActivity);
+        document.addEventListener('scroll', handleUserActivity);
+        document.addEventListener('touchstart', handleUserActivity);
+
+        // Start the initial timer
+        resetInactivityTimer();
+
+        return () => {
+            // Clean up event listeners and timer
+            document.removeEventListener('mousedown', handleUserActivity);
+            document.removeEventListener('mousemove', handleUserActivity);
+            document.removeEventListener('keypress', handleUserActivity);
+            document.removeEventListener('scroll', handleUserActivity);
+            document.removeEventListener('touchstart', handleUserActivity);
+            
+            if (inactivityTimerRef.current) {
+                clearTimeout(inactivityTimerRef.current);
+            }
+        };
     }, []);
 
     useEffect(() => {
@@ -848,6 +891,14 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
             paymentMethod: paymentDetails.method,
             cashPaid: paymentDetails.cashAmount || 0,
             onlinePaid: paymentDetails.onlineAmount || 0,
+            // Store discount information
+            hasDiscount: paymentDetails.hasDiscount || false,
+            discountType: paymentDetails.discountType || null,
+            discountValue: paymentDetails.discountValue || 0,
+            discountAmount: paymentDetails.discountAmount || 0,
+            originalAmount: paymentDetails.originalAmount || activeSale.totalAmount,
+            // Update totalAmount to reflect the discounted price
+            totalAmount: paymentDetails.finalAmount || activeSale.totalAmount,
         };
         await dbAction('sales', 'readwrite', (store) => store.put(updatedSale));
         setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
@@ -916,6 +967,50 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
         setActiveSale(null);
         await addLog(`Sale ${activeSale.id.slice(-4)} was voided.`);
         showNotification('Sale has been voided.', 'info');
+    };
+
+    const handleQuantityChange = async (itemIndex, delta) => {
+        if (!activeSale) return;
+
+        const item = activeSale.items[itemIndex];
+        const newQty = item.qty + delta;
+
+        if (newQty <= 0) {
+            // Remove item if quantity becomes 0 or less
+            await handleCancelItem(itemIndex);
+            return;
+        }
+
+        // Check inventory availability for increase
+        if (delta > 0) {
+            const inventoryItem = inventory.find(i => i.id === item.id);
+            if (inventoryItem && !inventoryItem.isUnlimited && inventoryItem.quantity < 1) {
+                showNotification('Not enough inventory available.', 'error');
+                return;
+            }
+        }
+
+        // Update item quantity
+        const newItems = activeSale.items.map((i, index) => 
+            index === itemIndex ? { ...i, qty: newQty } : i
+        );
+        const newTotal = newItems.reduce((sum, i) => sum + (i.price * i.qty), 0);
+        const updatedSale = { ...activeSale, items: newItems, totalAmount: newTotal };
+
+        // Update inventory
+        const inventoryItem = inventory.find(i => i.id === item.id);
+        if (inventoryItem && !inventoryItem.isUnlimited) {
+            const updatedInventoryItem = { ...inventoryItem, quantity: inventoryItem.quantity - delta };
+            await dbAction('inventory', 'readwrite', (store) => store.put(updatedInventoryItem));
+            setInventory(prev => prev.map(i => i.id === item.id ? updatedInventoryItem : i));
+        }
+
+        // Update sale
+        await dbAction('sales', 'readwrite', (store) => store.put(updatedSale));
+        setSales(prev => prev.map(s => s.id === updatedSale.id ? updatedSale : s));
+        setActiveSale(updatedSale);
+        
+        showNotification(`${item.name} quantity ${delta > 0 ? 'increased' : 'decreased'}.`, 'success');
     };
 
     const handleAddExpense = async (expenseData) => {
@@ -1142,7 +1237,7 @@ const DashboardTab = ({ members, inventory, sales, checkIns, showNotification, a
                             <div className="flex justify-between items-center mb-4"><h3 className="text-xl font-bold text-gray-800">Active Sale</h3><button onClick={() => setActiveSale(null)} className="text-sm text-gray-500 hover:text-red-600">Close</button></div>
                             <p className="mb-2"><strong>Client:</strong> {activeSale.memberName}</p>
                             {activeSale.memberId === null && <div className="relative mb-4"><input type="text" placeholder="Assign to member..." value={assignMemberSearch} onChange={e => setAssignMemberSearch(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg" />{assignableMembers.length > 0 && <ul className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg mt-1 shadow-lg max-h-40 overflow-y-auto">{assignableMembers.map(member => <li key={member.id} onClick={() => handleAssignMemberToSale(member)} className="p-2 hover:bg-indigo-50 cursor-pointer">{formatMemberFullName(member)}</li>)}</ul>}</div>}
-                            <ul className="space-y-2 mb-4 max-h-60 overflow-y-auto">{activeSale.items.map((item, index) => (<li key={index} className="flex justify-between items-center text-sm"><span>{item.name} x{item.qty}</span><span className="font-mono">₱{(item.price * item.qty).toFixed(2)}</span><button onClick={() => handleCancelItem(index)} className="text-red-500 font-bold text-xs ml-2">X</button></li>))}</ul>
+                            <ul className="space-y-2 mb-4 max-h-60 overflow-y-auto">{activeSale.items.map((item, index) => (<li key={index} className="flex justify-between items-center text-sm"><div className="flex items-center gap-2"><span>{item.name}</span><div className="flex items-center gap-1 bg-gray-100 rounded px-2 py-1"><button onClick={() => handleQuantityChange(index, -1)} className="text-gray-600 hover:text-gray-800 font-bold text-xs w-5 h-5 flex items-center justify-center">-</button><span className="font-mono text-xs min-w-[20px] text-center">{item.qty}</span><button onClick={() => handleQuantityChange(index, 1)} className="text-gray-600 hover:text-gray-800 font-bold text-xs w-5 h-5 flex items-center justify-center">+</button></div></div><span className="font-mono">₱{(item.price * item.qty).toFixed(2)}</span><button onClick={() => handleCancelItem(index)} className="text-red-500 font-bold text-xs ml-2">X</button></li>))}</ul>
                             <div className="border-t pt-4 flex justify-between items-center"><p className="text-lg font-bold">Total:</p><p className="text-2xl font-bold text-[var(--primary-color)]">₱{activeSale.totalAmount.toFixed(2)}</p></div>
                             <textarea value={saleNote} onChange={e => setSaleNote(e.target.value)} placeholder="Add a note to the sale..." className="w-full p-2 border border-gray-300 rounded-lg mt-4 text-sm"></textarea>
                             <div className="mt-2 space-y-3">
@@ -1199,10 +1294,9 @@ const DashboardAnalytics = ({ members, sales, checkIns }) => {
                 </div>
                 {isRevenueCard && (
                     <button
-                        onMouseEnter={() => setRevenueVisible(true)}
-                        onMouseLeave={() => setRevenueVisible(false)}
+                        onClick={() => setRevenueVisible(!revenueVisible)}
                         className="ml-2 p-2 text-gray-400 hover:text-gray-600 transition-colors"
-                        title="Hold to reveal revenue"
+                        title="Click to toggle revenue visibility"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -1229,19 +1323,31 @@ const PaymentModal = ({ sale, onCancel, onConfirm }) => {
     const [method, setMethod] = useState('Cash');
     const [cashAmount, setCashAmount] = useState('');
     const [onlineAmount, setOnlineAmount] = useState('');
+    const [discount, setDiscount] = useState('0');
+    const [discountType, setDiscountType] = useState('percentage'); // 'percentage' or 'fixed'
+    const [discountExpanded, setDiscountExpanded] = useState(false);
+    const [discountApplied, setDiscountApplied] = useState(false);
+
+    const discountValue = parseFloat(discount) || 0;
+    const discountAmount = discountType === 'percentage' 
+        ? (discountValue / 100) * sale.totalAmount 
+        : discountValue;
+    const totalAfterDiscount = Math.max(0, sale.totalAmount - discountAmount);
 
     useEffect(() => {
+        const finalAmount = discountApplied && discountAmount > 0 ? totalAfterDiscount : sale.totalAmount;
+
         if (method === 'Cash') {
-            setCashAmount(sale.totalAmount.toFixed(2));
+            setCashAmount(finalAmount.toFixed(2));
             setOnlineAmount('');
         } else if (method === 'Online') {
-            setOnlineAmount(sale.totalAmount.toFixed(2));
+            setOnlineAmount(finalAmount.toFixed(2));
             setCashAmount('');
         } else { // Split
             setCashAmount('');
             setOnlineAmount('');
         }
-    }, [method, sale.totalAmount]);
+    }, [method, sale.totalAmount, discountApplied, totalAfterDiscount]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -1249,9 +1355,19 @@ const PaymentModal = ({ sale, onCancel, onConfirm }) => {
             method,
             cashAmount: parseFloat(cashAmount) || 0,
             onlineAmount: parseFloat(onlineAmount) || 0,
+            // Add discount information
+            hasDiscount: discountApplied && discountAmount > 0,
+            discountType: discountApplied && discountAmount > 0 ? discountType : null,
+            discountValue: discountApplied && discountAmount > 0 ? discountValue : 0,
+            discountAmount: discountApplied && discountAmount > 0 ? discountAmount : 0,
+            originalAmount: sale.totalAmount,
+            finalAmount: discountApplied && discountAmount > 0 ? totalAfterDiscount : sale.totalAmount,
         };
+        
+        const finalTotal = discountApplied && discountAmount > 0 ? totalAfterDiscount : sale.totalAmount;
+        
         if (method === 'Split') {
-            if (Math.abs(paymentDetails.cashAmount + paymentDetails.onlineAmount - sale.totalAmount) > 0.001) {
+            if (Math.abs(paymentDetails.cashAmount + paymentDetails.onlineAmount - finalTotal) > 0.001) {
                 alert('Split payment amounts must add up to the total amount.');
                 return;
             }
@@ -1263,9 +1379,102 @@ const PaymentModal = ({ sale, onCancel, onConfirm }) => {
         <Modal onClose={onCancel}>
             <form onSubmit={handleSubmit}>
                 <h3 className="text-2xl font-bold text-gray-800 mb-4">Process Payment</h3>
-                <p className="text-lg font-semibold mb-4">Total Due: <span className="font-mono text-[var(--primary-color)]">₱{sale.totalAmount.toFixed(2)}</span></p>
+                <div className="mb-4">
+                    <p className="text-lg font-semibold">
+                        {discountApplied && discountAmount > 0 ? (
+                            <>
+                                <span className="line-through text-gray-500">₱{sale.totalAmount.toFixed(2)}</span>
+                                <span className="ml-2 font-mono text-[var(--primary-color)]">₱{totalAfterDiscount.toFixed(2)}</span>
+                                <span className="ml-2 text-sm text-green-600">(₱{discountAmount.toFixed(2)} discount)</span>
+                            </>
+                        ) : (
+                            <>Total Due: <span className="font-mono text-[var(--primary-color)]">₱{sale.totalAmount.toFixed(2)}</span></>
+                        )}
+                    </p>
+                </div>
 
                 <div className="space-y-4">
+                    {/* Discount Accordion */}
+                    <div className="border rounded-lg">
+                        <button
+                            type="button"
+                            onClick={() => setDiscountExpanded(!discountExpanded)}
+                            className="w-full p-3 text-left bg-gray-50 hover:bg-gray-100 rounded-t-lg font-medium text-gray-700 flex justify-between items-center"
+                        >
+                            <span>Special Discount</span>
+                            <svg 
+                                className={`w-5 h-5 transform transition-transform ${discountExpanded ? 'rotate-180' : ''}`}
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                            >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        
+                        {discountExpanded && (
+                            <div className="p-4 border-t">
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">Discount Type</label>
+                                        <select 
+                                            value={discountType} 
+                                            onChange={e => setDiscountType(e.target.value)}
+                                            className="w-full p-2 border rounded bg-white"
+                                        >
+                                            <option value="percentage">Percentage (%)</option>
+                                            <option value="fixed">Fixed Amount (₱)</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                            {discountType === 'percentage' ? 'Discount Percentage' : 'Discount Amount'}
+                                        </label>
+                                        <input
+                                            type="number"
+                                            step={discountType === 'percentage' ? '0.1' : '0.01'}
+                                            min="0"
+                                            max={discountType === 'percentage' ? '100' : sale.totalAmount.toString()}
+                                            value={discount}
+                                            onChange={e => setDiscount(e.target.value)}
+                                            className="w-full p-2 border rounded"
+                                            placeholder={discountType === 'percentage' ? 'Enter percentage (0-100)' : 'Enter amount'}
+                                        />
+                                    </div>
+                                    
+                                    {discountValue > 0 && (
+                                        <div className="bg-blue-50 p-3 rounded border">
+                                            <p className="text-sm text-gray-600">
+                                                Discount: {discountType === 'percentage' ? `${discountValue}%` : `₱${discountValue.toFixed(2)}`} 
+                                                = ₱{discountAmount.toFixed(2)}
+                                            </p>
+                                            <p className="text-sm font-semibold text-blue-800">
+                                                New Total: ₱{totalAfterDiscount.toFixed(2)}
+                                            </p>
+                                        </div>
+                                    )}
+                                    
+                                    <button
+                                        type="button"
+                                        onClick={() => setDiscountApplied(true)}
+                                        className="w-full bg-blue-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-600"
+                                        disabled={discountValue <= 0}
+                                    >
+                                        Apply Discount
+                                    </button>
+                                    
+                                    {discountApplied && discountAmount > 0 && (
+                                        <div className="bg-green-50 p-2 rounded border border-green-200">
+                                            <p className="text-sm text-green-800 font-medium">
+                                                ✓ Discount of ₱{discountAmount.toFixed(2)} applied
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Payment Method</label>
                         <select value={method} onChange={e => setMethod(e.target.value)} className="w-full p-2 border rounded bg-white">
@@ -1696,7 +1905,7 @@ const InventoryListItem = ({ item, onEdit, onDeleteItem, onViewId, isAdmin }) =>
 );
 
 // --- Reports Tab ---
-const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser, showNotification, setSales, setInventory, addLog, inventory, printerCharacteristic, branding }) => {
+const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser, showNotification, setSales, setInventory, addLog, inventory, printerCharacteristic, branding, addToPrintQueue }) => {
     const [reportType, setReportType] = useState('sales');
     const [dateRange, setDateRange] = useState({
         start: new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0],
@@ -1791,6 +2000,13 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
     };
 
     const handleRefund = async (saleToRefund) => {
+        // Check if this sale has already been refunded
+        const existingRefund = sales.find(s => s.note && s.note.includes(`Refund for sale ID: ${saleToRefund.id.slice(-4)}`));
+        if (existingRefund) {
+            showNotification('This sale has already been refunded.', 'error');
+            return;
+        }
+
         const refundAmount = -saleToRefund.totalAmount;
         const newRefundSale = {
             ...saleToRefund,
@@ -1800,8 +2016,14 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
             onlinePaid: saleToRefund.onlinePaid ? -saleToRefund.onlinePaid : 0,
             status: 'Refunded',
             note: `Refund for sale ID: ${saleToRefund.id.slice(-4)}`,
+            originalSaleId: saleToRefund.id, // Link to original sale
             saleDate: new Date().toISOString(),
         };
+
+        // Mark the original sale as refunded
+        const updatedOriginalSale = { ...saleToRefund, status: 'Refunded' };
+        await dbAction('sales', 'readwrite', (store) => store.put(updatedOriginalSale));
+        setSales(prev => prev.map(s => s.id === saleToRefund.id ? updatedOriginalSale : s));
 
         for (const item of saleToRefund.items) {
             const originalItem = inventory.find(i => i.id === item.id);
@@ -1844,41 +2066,186 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
     };
 
     const handleGeneratePdf = async () => {
-        if (!navigator.onLine) {
-            showNotification('Internet connection is required to generate a PDF report.', 'error');
-            return;
-        }
-
         try {
             showNotification('Preparing PDF... please wait.', 'info');
+            
+            // Load jsPDF and html2canvas
             await Promise.all([
                 loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
                 loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
             ]);
-
+            
             const { jsPDF } = window.jspdf;
-            const input = document.getElementById('printableArea');
+            const originalElement = document.getElementById('printableArea');
+            if (!originalElement) {
+                showNotification('No printable content found', 'error');
+                return;
+            }
 
-            const canvas = await window.html2canvas(input, { scale: 2 });
+            // OKLCH to RGB conversion function
+            const convertOklchToRgb = (oklchString) => {
+                const match = oklchString.match(/oklch\(([^)]+)\)/i);
+                if (!match) return oklchString;
+                const [, values] = match;
+                const [l, c, h] = values.split(/\s+/).map(v => parseFloat(v.replace('%', '')));
+                const hRad = (h || 0) * Math.PI / 180;
+                const a = (c || 0) * Math.cos(hRad) / 100;
+                const b = (c || 0) * Math.sin(hRad) / 100;
+                const L = (l || 0) / 100;
+                const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+                const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+                const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+                const l_cubed = l_ * l_ * l_;
+                const m = m_ * m_ * m_;
+                const s = s_ * s_ * s_;
+                let r = +4.0767416621 * l_cubed - 3.3077115913 * m + 0.2309699292 * s;
+                let g = -1.2684380046 * l_cubed + 2.6097574011 * m - 0.3413193965 * s;
+                let b_rgb = -0.0041960863 * l_cubed - 0.7034186147 * m + 1.7076147010 * s;
+                r = Math.max(0, Math.min(1, r));
+                g = Math.max(0, Math.min(1, g));
+                b_rgb = Math.max(0, Math.min(1, b_rgb));
+                r = r <= 0.0031308 ? 12.92 * r : 1.055 * Math.pow(r, 1/2.4) - 0.055;
+                g = g <= 0.0031308 ? 12.92 * g : 1.055 * Math.pow(g, 1/2.4) - 0.055;
+                b_rgb = b_rgb <= 0.0031308 ? 12.92 * b_rgb : 1.055 * Math.pow(b_rgb, 1/2.4) - 0.055;
+                const red = Math.round(Math.max(0, Math.min(255, r * 255)));
+                const green = Math.round(Math.max(0, Math.min(255, g * 255)));
+                const blue = Math.round(Math.max(0, Math.min(255, b_rgb * 255)));
+                return `rgb(${red}, ${green}, ${blue})`;
+            };
+
+            // Helper function to convert all OKLCH colors in a string
+            const convertAllOklchInString = (str) => {
+                if (!str || typeof str !== 'string') return str;
+                // Use global, case-insensitive regex to catch all OKLCH occurrences
+                return str.replace(/oklch\s*\([^)]*\)/gi, (match) => {
+                    try {
+                        return convertOklchToRgb(match);
+                    } catch (e) {
+                        console.warn('Failed to convert OKLCH color:', match, e);
+                        return 'rgb(128, 128, 128)'; // Fallback to gray
+                    }
+                });
+            };
+
+            // Recursively copy computed styles from original to clone, converting OKLCH colors
+            const cloneWithStyles = (originalNode, clonedNode) => {
+                if (originalNode.nodeType === Node.ELEMENT_NODE) {
+                    const computedStyle = window.getComputedStyle(originalNode);
+                    let styleString = '';
+                    for (let i = 0; i < computedStyle.length; i++) {
+                        const property = computedStyle[i];
+                        let value = computedStyle.getPropertyValue(property);
+                        if (value && value.includes('oklch')) {
+                            value = value.replace(/oklch\([^)]+\)/g, (match) => convertOklchToRgb(match));
+                        }
+                        styleString += `${property}: ${value}; `;
+                    }
+                    let inlineStyle = originalNode.getAttribute('style') || '';
+                    if (inlineStyle.includes('oklch')) {
+                        inlineStyle = inlineStyle.replace(/oklch\([^)]+\)/g, (match) => convertOklchToRgb(match));
+                    }
+                    if (inlineStyle) styleString += inlineStyle;
+                    clonedNode.setAttribute('style', styleString);
+
+                    // Copy other attributes
+                    for (let attr of Array.from(originalNode.attributes)) {
+                        if (attr.name !== 'style') {
+                            clonedNode.setAttribute(attr.name, attr.value);
+                        }
+                    }
+                }
+                
+                // Recursively clone children
+                for (let i = 0; i < originalNode.childNodes.length; i++) {
+                    const originalChild = originalNode.childNodes[i];
+                    let clonedChild;
+                    if (originalChild.nodeType === Node.ELEMENT_NODE) {
+                        clonedChild = document.createElement(originalChild.tagName);
+                        cloneWithStyles(originalChild, clonedChild);
+                    } else if (originalChild.nodeType === Node.TEXT_NODE) {
+                        clonedChild = document.createTextNode(originalChild.textContent);
+                    } else {
+                        clonedChild = originalChild.cloneNode(false);
+                    }
+                    clonedNode.appendChild(clonedChild);
+                }
+            };
+
+            // Create clone
+            const clonedElement = document.createElement(originalElement.tagName);
+            cloneWithStyles(originalElement, clonedElement);
+
+            // Position clone off-screen but visible for rendering
+            clonedElement.style.position = 'absolute';
+            clonedElement.style.left = '-9999px';
+            clonedElement.style.top = '0';
+            clonedElement.style.width = originalElement.offsetWidth + 'px';
+            clonedElement.style.height = 'auto';
+            clonedElement.style.visibility = 'hidden';
+            clonedElement.style.pointerEvents = 'none';
+            document.body.appendChild(clonedElement);
+
+            // Force a reflow
+            void clonedElement.offsetHeight;
+
+            const canvas = await window.html2canvas(clonedElement, {
+                scale: 2,
+                useCORS: true,
+                allowTaint: false,
+                backgroundColor: '#fff',
+                width: originalElement.offsetWidth,
+                height: originalElement.offsetHeight
+            });
+
+            // Remove clone
+            document.body.removeChild(clonedElement);
+
+            // Create PDF
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF('p', 'mm', 'a4');
+
+            // Add gym header
+            pdf.setFontSize(18);
+            pdf.setFont('helvetica', 'bold');
+            const gymName = branding?.gymName || 'Gym Management System';
+            pdf.text(gymName, pdf.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
+
+            // Add generation metadata
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'normal');
+            const currentDate = new Date().toLocaleDateString();
+            const currentTime = new Date().toLocaleTimeString();
+            const generatedBy = currentUser?.fullName || currentUser?.username || 'System';
+            pdf.text(`Generated by: ${generatedBy}`, 10, 25);
+            pdf.text(`Date & Time: ${currentDate} ${currentTime}`, 10, 30);
+
+            // Calculate image dimensions
             const pdfWidth = pdf.internal.pageSize.getWidth();
             const canvasWidth = canvas.width;
             const canvasHeight = canvas.height;
             const ratio = canvasWidth / canvasHeight;
-            const width = pdfWidth - 20; // with margin
+            const width = pdfWidth - 20;
             const height = width / ratio;
 
-            pdf.addImage(imgData, 'PNG', 10, 10, width, height);
+            // Fit to one page if needed
+            const maxHeight = pdf.internal.pageSize.getHeight() - 45;
+            if (height > maxHeight) {
+                const scaledHeight = maxHeight;
+                const scaledWidth = scaledHeight * ratio;
+                pdf.addImage(imgData, 'PNG', (pdfWidth - scaledWidth) / 2, 35, scaledWidth, scaledHeight);
+            } else {
+                pdf.addImage(imgData, 'PNG', 10, 35, width, height);
+            }
 
+            // Save PDF
             const date = new Date().toISOString().split('T')[0];
-            pdf.save(`${reportType}-report-${date}.pdf`);
-            showNotification('PDF downloaded successfully!', 'success');
-            addLog(`Downloaded ${reportType} report as PDF.`);
+            pdf.save(`${gymName.replace(/[^a-zA-Z0-9]/g, '-')}-${reportType}-report-${date}.pdf`);
 
+            showNotification('PDF downloaded successfully!', 'success');
+            addLog(`Downloaded ${reportType} report as PDF for ${gymName}.`);
         } catch (error) {
             console.error("Error generating PDF:", error);
-            showNotification('Failed to generate PDF. Libraries could not be loaded.', 'error');
+            showNotification('Failed to generate PDF. Please try again or check for unsupported styles.', 'error');
         }
     };
 
@@ -1926,47 +2293,148 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
 };
 
 const SalesReport = ({ data, requestSort, sortConfig, onRefund, onReprint }) => {
-    const totalRevenue = data.reduce((sum, sale) => sum + sale.totalAmount, 0);
-    const totalCash = data.reduce((sum, sale) => sum + (sale.cashPaid || 0), 0);
-    const totalOnline = data.reduce((sum, sale) => sum + (sale.onlinePaid || 0), 0);
+    // Filter out refund transactions from totals calculation
+    const regularSales = data.filter(sale => !sale.note?.includes('Refund for sale ID:'));
+    const refundSales = data.filter(sale => sale.note?.includes('Refund for sale ID:'));
+    
+    const totalRevenue = regularSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+    const totalCash = regularSales.reduce((sum, sale) => sum + (sale.cashPaid || 0), 0);
+    const totalOnline = regularSales.reduce((sum, sale) => sum + (sale.onlinePaid || 0), 0);
+    const totalRefunds = Math.abs(refundSales.reduce((sum, sale) => sum + sale.totalAmount, 0));
+    const totalDiscounts = regularSales.reduce((sum, sale) => sum + (sale.discountAmount || 0), 0);
+    const originalRevenueBeforeDiscounts = regularSales.reduce((sum, sale) => sum + (sale.originalAmount || sale.totalAmount), 0);
 
     const getSortIcon = (key) => {
         if (sortConfig.key !== key) return null;
         return sortConfig.direction === 'asc' ? <Icons.SortAsc /> : <Icons.SortDesc />;
     };
 
+    const getStatusBadge = (sale) => {
+        if (sale.note?.includes('Refund for sale ID:')) {
+            return <span className="px-2 py-1 text-xs font-semibold bg-red-100 text-red-800 rounded-full">REFUND</span>;
+        }
+        if (sale.status === 'Refunded') {
+            return <span className="px-2 py-1 text-xs font-semibold bg-orange-100 text-orange-800 rounded-full">REFUNDED</span>;
+        }
+        if (sale.status === 'Paid') {
+            return <span className="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full">PAID</span>;
+        }
+        return <span className="px-2 py-1 text-xs font-semibold bg-gray-100 text-gray-800 rounded-full">{sale.status}</span>;
+    };
+
+    const canRefund = (sale) => {
+        // Can only refund if status is 'Paid' and it's not a refund transaction itself
+        return sale.status === 'Paid' && !sale.note?.includes('Refund for sale ID:');
+    };
+
     return (
         <div>
-            <div className="mb-4 p-4 bg-indigo-50 rounded-lg grid grid-cols-1 md:grid-cols-3 gap-4">
-                <h4 className="font-bold text-lg text-indigo-800">Total Revenue: ₱{totalRevenue.toFixed(2)}</h4>
-                <h4 className="font-semibold text-lg text-green-800">Total Cash: ₱{totalCash.toFixed(2)}</h4>
-                <h4 className="font-semibold text-lg text-blue-800">Total Online: ₱{totalOnline.toFixed(2)}</h4>
+            <div className="mb-4 p-4 bg-indigo-50 rounded-lg">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    <h4 className="font-bold text-lg text-indigo-800">Net Revenue: ₱{(totalRevenue - totalRefunds).toFixed(2)}</h4>
+                    <h4 className="font-semibold text-lg text-green-800">Total Cash: ₱{totalCash.toFixed(2)}</h4>
+                    <h4 className="font-semibold text-lg text-blue-800">Total Online: ₱{totalOnline.toFixed(2)}</h4>
+                    <h4 className="font-semibold text-lg text-red-800">Total Refunds: ₱{totalRefunds.toFixed(2)}</h4>
+                </div>
+                {totalDiscounts > 0 && (
+                    <div className="border-t pt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <h4 className="font-semibold text-lg text-orange-800">Original Revenue: ₱{originalRevenueBeforeDiscounts.toFixed(2)}</h4>
+                            <h4 className="font-semibold text-lg text-purple-800">Total Discounts: ₱{totalDiscounts.toFixed(2)}</h4>
+                            <h4 className="font-semibold text-lg text-gray-600">Savings Given: {((totalDiscounts / originalRevenueBeforeDiscounts) * 100).toFixed(1)}%</h4>
+                        </div>
+                    </div>
+                )}
             </div>
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50"><tr>
-                    <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('saleDate')}>Date {getSortIcon('saleDate')}</th>
-                    <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('memberName')}>Client {getSortIcon('memberName')}</th>
-                    <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase">Items</th>
-                    <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase">Payment</th>
-                    <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('cashPaid')}>Cash Paid {getSortIcon('cashPaid')}</th>
-                    <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('onlinePaid')}>Online Paid {getSortIcon('onlinePaid')}</th>
-                    <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('totalAmount')}>Total {getSortIcon('totalAmount')}</th>
-                    <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase">Actions</th>
-                </tr></thead>
-                <tbody className="bg-white divide-y divide-gray-200">{data.map(sale => (<tr key={sale.id} className={sale.status === 'Refunded' ? 'bg-red-50' : ''}>
-                    <td className="px-2 py-2">{new Date(sale.saleDate).toLocaleString()}</td>
-                    <td className="px-2 py-2">{sale.memberName}</td>
-                    <td className="px-2 py-2">{sale.items.map(i => `${i.name} (x${i.qty})`).join(', ')}</td>
-                    <td className="px-2 py-2">{sale.paymentMethod}</td>
-                    <td className="px-2 py-2 text-right font-mono">₱{sale.cashPaid?.toFixed(2) || '0.00'}</td>
-                    <td className="px-2 py-2 text-right font-mono">₱{sale.onlinePaid?.toFixed(2) || '0.00'}</td>
-                    <td className="px-2 py-2 text-right font-mono">₱{sale.totalAmount.toFixed(2)}</td>
-                    <td className="px-2 py-2 text-right">
-                        <button onClick={() => onReprint(sale)} className="p-2 text-gray-500 hover:text-blue-600 rounded-full" title="Reprint Receipt"><Icons.Reprint /></button>
-                        {sale.status === 'Paid' && <button onClick={() => onRefund(sale)} className="p-2 text-gray-500 hover:text-yellow-600 rounded-full" title="Refund Sale"><Icons.Refund /></button>}
-                    </td>
-                </tr>))}</tbody>
-            </table>
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50"><tr>
+                        <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('saleDate')}>Date {getSortIcon('saleDate')}</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('memberName')}>Client {getSortIcon('memberName')}</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase">Items Detail</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-3 py-3 text-left font-medium text-gray-500 uppercase">Payment</th>
+                        <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('cashPaid')}>Cash {getSortIcon('cashPaid')}</th>
+                        <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('onlinePaid')}>Online {getSortIcon('onlinePaid')}</th>
+                        <th className="px-3 py-3 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('totalAmount')}>Total {getSortIcon('totalAmount')}</th>
+                        <th className="px-3 py-3 text-center font-medium text-gray-500 uppercase">Actions</th>
+                    </tr></thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {data.map(sale => {
+                            const isRefundTransaction = sale.note?.includes('Refund for sale ID:');
+                            const rowClass = isRefundTransaction ? 'bg-red-50' : sale.status === 'Refunded' ? 'bg-orange-50' : '';
+                            
+                            return (
+                                <tr key={sale.id} className={rowClass}>
+                                    <td className="px-3 py-3 whitespace-nowrap">{new Date(sale.saleDate).toLocaleString()}</td>
+                                    <td className="px-3 py-3">{sale.memberName}</td>
+                                    <td className="px-3 py-3">
+                                        <div className="space-y-1">
+                                            {sale.items.map((item, idx) => (
+                                                <div key={idx} className="flex justify-between text-xs">
+                                                    <span>{item.name}</span>
+                                                    <span className="font-mono">x{item.qty} @ ₱{item.price.toFixed(2)}</span>
+                                                </div>
+                                            ))}
+                                            {sale.hasDiscount && (
+                                                <div className="text-xs text-purple-600 font-semibold mt-1 flex justify-between">
+                                                    <span>Discount Applied:</span>
+                                                    <span>
+                                                        {sale.discountType === 'percentage' 
+                                                            ? `${sale.discountValue}% (₱${sale.discountAmount.toFixed(2)})`
+                                                            : `Fixed ₱${sale.discountAmount.toFixed(2)}`
+                                                        }
+                                                    </span>
+                                                </div>
+                                            )}
+                                            {sale.note && (
+                                                <div className="text-xs text-gray-500 italic mt-1">{sale.note}</div>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-3 py-3">{getStatusBadge(sale)}</td>
+                                    <td className="px-3 py-3">{sale.paymentMethod}</td>
+                                    <td className="px-3 py-3 text-right font-mono text-sm">
+                                        <span className={sale.cashPaid < 0 ? 'text-red-600' : ''}>
+                                            ₱{sale.cashPaid?.toFixed(2) || '0.00'}
+                                        </span>
+                                    </td>
+                                    <td className="px-3 py-3 text-right font-mono text-sm">
+                                        <span className={sale.onlinePaid < 0 ? 'text-red-600' : ''}>
+                                            ₱{sale.onlinePaid?.toFixed(2) || '0.00'}
+                                        </span>
+                                    </td>
+                                    <td className="px-3 py-3 text-right font-mono font-semibold">
+                                        <span className={sale.totalAmount < 0 ? 'text-red-600' : 'text-green-600'}>
+                                            ₱{sale.totalAmount.toFixed(2)}
+                                        </span>
+                                    </td>
+                                    <td className="px-3 py-3 text-center">
+                                        <div className="flex justify-center space-x-1">
+                                            <button 
+                                                onClick={() => onReprint(sale)} 
+                                                className="p-2 text-gray-500 hover:text-blue-600 rounded-full" 
+                                                title="Reprint Receipt"
+                                            >
+                                                <Icons.Reprint />
+                                            </button>
+                                            {canRefund(sale) && (
+                                                <button 
+                                                    onClick={() => onRefund(sale)} 
+                                                    className="p-2 text-gray-500 hover:text-yellow-600 rounded-full" 
+                                                    title="Refund Sale"
+                                                >
+                                                    <Icons.Refund />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };

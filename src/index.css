@@ -42,3 +42,9 @@ input:-internal-autofill-selected {
         text-align: center !important;
     }
 }
+
+.md\:grid-cols-4 {
+    @media (width >= 48rem) {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+}
