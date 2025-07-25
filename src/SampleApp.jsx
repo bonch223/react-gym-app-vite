@@ -1911,7 +1911,21 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
         start: new Date(new Date().setDate(new Date().getDate() - 7)).toISOString().split('T')[0],
         end: new Date().toISOString().split('T')[0],
     });
-    const [sortConfig, setSortConfig] = useState({ key: 'saleDate', direction: 'desc' });
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
+    
+    // Set default sort based on report type
+    useEffect(() => {
+        const defaultSorts = {
+            'sales': { key: 'saleDate', direction: 'desc' },
+            'shifts': { key: 'endTime', direction: 'desc' },
+            'cashflow': { key: 'timestamp', direction: 'desc' },
+            'performance': { key: 'totalSales', direction: 'desc' }
+        };
+        
+        if (defaultSorts[reportType]) {
+            setSortConfig(defaultSorts[reportType]);
+        }
+    }, [reportType]);
     const isAdmin = currentUser.role === 'admin';
 
     const handleDateChange = (e) => {
@@ -2066,186 +2080,276 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
     };
 
     const handleGeneratePdf = async () => {
+        // Check internet connectivity first
+        const checkInternetConnectivity = async () => {
+            try {
+                const response = await fetch('https://httpbin.org/get', {
+                    method: 'GET',
+                    mode: 'cors',
+                    cache: 'no-cache',
+                    timeout: 5000
+                });
+                return response.ok;
+            } catch (error) {
+                return false;
+            }
+        };
+
+        const isOnline = await checkInternetConnectivity();
+        if (!isOnline) {
+            showNotification('Internet connection required for PDF generation. Please connect to the internet and try again.', 'error');
+            return;
+        }
+
         try {
-            showNotification('Preparing PDF... please wait.', 'info');
+            showNotification('Generating PDF online... please wait.', 'info');
             
-            // Load jsPDF and html2canvas
-            await Promise.all([
-                loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'),
-                loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')
-            ]);
-            
-            const { jsPDF } = window.jspdf;
-            const originalElement = document.getElementById('printableArea');
-            if (!originalElement) {
+            const printableElement = document.getElementById('printableArea');
+            if (!printableElement) {
                 showNotification('No printable content found', 'error');
                 return;
             }
 
-            // OKLCH to RGB conversion function
-            const convertOklchToRgb = (oklchString) => {
-                const match = oklchString.match(/oklch\(([^)]+)\)/i);
-                if (!match) return oklchString;
-                const [, values] = match;
-                const [l, c, h] = values.split(/\s+/).map(v => parseFloat(v.replace('%', '')));
-                const hRad = (h || 0) * Math.PI / 180;
-                const a = (c || 0) * Math.cos(hRad) / 100;
-                const b = (c || 0) * Math.sin(hRad) / 100;
-                const L = (l || 0) / 100;
-                const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
-                const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
-                const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
-                const l_cubed = l_ * l_ * l_;
-                const m = m_ * m_ * m_;
-                const s = s_ * s_ * s_;
-                let r = +4.0767416621 * l_cubed - 3.3077115913 * m + 0.2309699292 * s;
-                let g = -1.2684380046 * l_cubed + 2.6097574011 * m - 0.3413193965 * s;
-                let b_rgb = -0.0041960863 * l_cubed - 0.7034186147 * m + 1.7076147010 * s;
-                r = Math.max(0, Math.min(1, r));
-                g = Math.max(0, Math.min(1, g));
-                b_rgb = Math.max(0, Math.min(1, b_rgb));
-                r = r <= 0.0031308 ? 12.92 * r : 1.055 * Math.pow(r, 1/2.4) - 0.055;
-                g = g <= 0.0031308 ? 12.92 * g : 1.055 * Math.pow(g, 1/2.4) - 0.055;
-                b_rgb = b_rgb <= 0.0031308 ? 12.92 * b_rgb : 1.055 * Math.pow(b_rgb, 1/2.4) - 0.055;
-                const red = Math.round(Math.max(0, Math.min(255, r * 255)));
-                const green = Math.round(Math.max(0, Math.min(255, g * 255)));
-                const blue = Math.round(Math.max(0, Math.min(255, b_rgb * 255)));
-                return `rgb(${red}, ${green}, ${blue})`;
-            };
-
-            // Helper function to convert all OKLCH colors in a string
-            const convertAllOklchInString = (str) => {
-                if (!str || typeof str !== 'string') return str;
-                // Use global, case-insensitive regex to catch all OKLCH occurrences
-                return str.replace(/oklch\s*\([^)]*\)/gi, (match) => {
-                    try {
-                        return convertOklchToRgb(match);
-                    } catch (e) {
-                        console.warn('Failed to convert OKLCH color:', match, e);
-                        return 'rgb(128, 128, 128)'; // Fallback to gray
-                    }
-                });
-            };
-
-            // Recursively copy computed styles from original to clone, converting OKLCH colors
-            const cloneWithStyles = (originalNode, clonedNode) => {
-                if (originalNode.nodeType === Node.ELEMENT_NODE) {
-                    const computedStyle = window.getComputedStyle(originalNode);
-                    let styleString = '';
-                    for (let i = 0; i < computedStyle.length; i++) {
-                        const property = computedStyle[i];
-                        let value = computedStyle.getPropertyValue(property);
-                        if (value && value.includes('oklch')) {
-                            value = value.replace(/oklch\([^)]+\)/g, (match) => convertOklchToRgb(match));
-                        }
-                        styleString += `${property}: ${value}; `;
-                    }
-                    let inlineStyle = originalNode.getAttribute('style') || '';
-                    if (inlineStyle.includes('oklch')) {
-                        inlineStyle = inlineStyle.replace(/oklch\([^)]+\)/g, (match) => convertOklchToRgb(match));
-                    }
-                    if (inlineStyle) styleString += inlineStyle;
-                    clonedNode.setAttribute('style', styleString);
-
-                    // Copy other attributes
-                    for (let attr of Array.from(originalNode.attributes)) {
-                        if (attr.name !== 'style') {
-                            clonedNode.setAttribute(attr.name, attr.value);
+            // Extract styles from stylesheets
+            const extractStyles = () => {
+                let styles = '';
+                try {
+                    // Get all stylesheets
+                    for (let i = 0; i < document.styleSheets.length; i++) {
+                        const styleSheet = document.styleSheets[i];
+                        try {
+                            if (styleSheet.cssRules) {
+                                for (let j = 0; j < styleSheet.cssRules.length; j++) {
+                                    styles += styleSheet.cssRules[j].cssText + '\n';
+                                }
+                            }
+                        } catch (e) {
+                            // Skip stylesheets that can't be accessed due to CORS
+                            console.warn('Could not access stylesheet:', styleSheet.href, e);
                         }
                     }
+                    
+                    // Add inline styles from style elements
+                    const styleElements = document.querySelectorAll('style');
+                    styleElements.forEach(styleEl => {
+                        styles += styleEl.textContent + '\n';
+                    });
+                } catch (error) {
+                    console.warn('Error extracting styles:', error);
                 }
-                
-                // Recursively clone children
-                for (let i = 0; i < originalNode.childNodes.length; i++) {
-                    const originalChild = originalNode.childNodes[i];
-                    let clonedChild;
-                    if (originalChild.nodeType === Node.ELEMENT_NODE) {
-                        clonedChild = document.createElement(originalChild.tagName);
-                        cloneWithStyles(originalChild, clonedChild);
-                    } else if (originalChild.nodeType === Node.TEXT_NODE) {
-                        clonedChild = document.createTextNode(originalChild.textContent);
-                    } else {
-                        clonedChild = originalChild.cloneNode(false);
-                    }
-                    clonedNode.appendChild(clonedChild);
-                }
+                return styles;
             };
 
-            // Create clone
-            const clonedElement = document.createElement(originalElement.tagName);
-            cloneWithStyles(originalElement, clonedElement);
-
-            // Position clone off-screen but visible for rendering
-            clonedElement.style.position = 'absolute';
-            clonedElement.style.left = '-9999px';
-            clonedElement.style.top = '0';
-            clonedElement.style.width = originalElement.offsetWidth + 'px';
-            clonedElement.style.height = 'auto';
-            clonedElement.style.visibility = 'hidden';
-            clonedElement.style.pointerEvents = 'none';
-            document.body.appendChild(clonedElement);
-
-            // Force a reflow
-            void clonedElement.offsetHeight;
-
-            const canvas = await window.html2canvas(clonedElement, {
-                scale: 2,
-                useCORS: true,
-                allowTaint: false,
-                backgroundColor: '#fff',
-                width: originalElement.offsetWidth,
-                height: originalElement.offsetHeight
-            });
-
-            // Remove clone
-            document.body.removeChild(clonedElement);
-
-            // Create PDF
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-
-            // Add gym header
-            pdf.setFontSize(18);
-            pdf.setFont('helvetica', 'bold');
+            // Create complete HTML document
             const gymName = branding?.gymName || 'Gym Management System';
-            pdf.text(gymName, pdf.internal.pageSize.getWidth() / 2, 15, { align: 'center' });
-
-            // Add generation metadata
-            pdf.setFontSize(10);
-            pdf.setFont('helvetica', 'normal');
             const currentDate = new Date().toLocaleDateString();
             const currentTime = new Date().toLocaleTimeString();
             const generatedBy = currentUser?.fullName || currentUser?.username || 'System';
-            pdf.text(`Generated by: ${generatedBy}`, 10, 25);
-            pdf.text(`Date & Time: ${currentDate} ${currentTime}`, 10, 30);
+            
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>${gymName} - ${reportType} Report</title>
+                    <style>
+                        ${extractStyles()}
+                        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+                        .pdf-header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+                        .pdf-header h1 { margin: 0; font-size: 24px; }
+                        .pdf-metadata { font-size: 12px; color: #666; margin-bottom: 20px; }
+                        .printable-content { margin-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="pdf-header">
+                        <h1>${gymName}</h1>
+                        <h2>${reportType.charAt(0).toUpperCase() + reportType.slice(1)} Report</h2>
+                    </div>
+                    <div class="pdf-metadata">
+                        <p>Generated by: ${generatedBy}</p>
+                        <p>Date & Time: ${currentDate} ${currentTime}</p>
+                    </div>
+                    <div class="printable-content">
+                        ${printableElement.innerHTML}
+                    </div>
+                </body>
+                </html>
+            `;
 
-            // Calculate image dimensions
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const canvasWidth = canvas.width;
-            const canvasHeight = canvas.height;
-            const ratio = canvasWidth / canvasHeight;
-            const width = pdfWidth - 20;
-            const height = width / ratio;
+            // Try online PDF generation service
+            const generateWithOnlineService = async () => {
+                try {
+                    // Using HTML/CSS to PDF API (replace with your preferred service)
+                    const response = await fetch('https://api.html-css-to-pdf.com/v1/generate', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            html: htmlContent,
+                            css: '',
+                            paper_format: 'A4',
+                            margin_top: '0.4in',
+                            margin_right: '0.4in',
+                            margin_bottom: '0.4in',
+                            margin_left: '0.4in',
+                            landscape: false
+                        })
+                    });
 
-            // Fit to one page if needed
-            const maxHeight = pdf.internal.pageSize.getHeight() - 45;
-            if (height > maxHeight) {
-                const scaledHeight = maxHeight;
-                const scaledWidth = scaledHeight * ratio;
-                pdf.addImage(imgData, 'PNG', (pdfWidth - scaledWidth) / 2, 35, scaledWidth, scaledHeight);
-            } else {
-                pdf.addImage(imgData, 'PNG', 10, 35, width, height);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        const date = new Date().toISOString().split('T')[0];
+                        a.download = `${gymName.replace(/[^a-zA-Z0-9]/g, '-')}-${reportType}-report-${date}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        showNotification('PDF downloaded successfully!', 'success');
+                        addLog(`Downloaded ${reportType} report as PDF for ${gymName}.`);
+                        return true;
+                    }
+                    return false;
+                } catch (error) {
+                    console.warn('Online PDF service failed:', error);
+                    return false;
+                }
+            };
+
+            // Local PDF generation fallback using jsPDF and html2canvas
+            const generateWithLocalLibraries = async () => {
+                try {
+                    // Load jsPDF and html2canvas from CDN if not already loaded
+                    if (!window.jsPDF) {
+                        await new Promise((resolve, reject) => {
+                            const script = document.createElement('script');
+                            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+                            script.onload = resolve;
+                            script.onerror = reject;
+                            document.head.appendChild(script);
+                        });
+                    }
+                    
+                    if (!window.html2canvas) {
+                        await new Promise((resolve, reject) => {
+                            const script = document.createElement('script');
+                            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+                            script.onload = resolve;
+                            script.onerror = reject;
+                            document.head.appendChild(script);
+                        });
+                    }
+
+                    // Create a temporary container with the HTML content
+                    const tempContainer = document.createElement('div');
+                    tempContainer.innerHTML = htmlContent;
+                    tempContainer.style.position = 'absolute';
+                    tempContainer.style.left = '-9999px';
+                    tempContainer.style.top = '0';
+                    tempContainer.style.width = '210mm';
+                    tempContainer.style.backgroundColor = 'white';
+                    tempContainer.style.fontFamily = 'Arial, sans-serif';
+                    document.body.appendChild(tempContainer);
+
+                    // Generate canvas from HTML
+                    const canvas = await html2canvas(tempContainer, {
+                        useCORS: true,
+                        allowTaint: true,
+                        scale: 2,
+                        width: 794, // A4 width in pixels at 96 DPI
+                        windowWidth: 794,
+                        backgroundColor: '#ffffff'
+                    });
+
+                    // Remove temporary container
+                    document.body.removeChild(tempContainer);
+
+                    // Create PDF
+                    const { jsPDF } = window.jsPDF;
+                    const pdf = new jsPDF('portrait', 'mm', 'a4');
+                    
+                    const imgWidth = 210; // A4 width in mm
+                    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                    
+                    let heightLeft = imgHeight;
+                    let position = 0;
+                    
+                    // Add first page
+                    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= 297; // A4 height in mm
+                    
+                    // Add additional pages if needed
+                    while (heightLeft >= 0) {
+                        position = heightLeft - imgHeight;
+                        pdf.addPage();
+                        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, position, imgWidth, imgHeight);
+                        heightLeft -= 297;
+                    }
+                    
+                    // Save the PDF
+                    const date = new Date().toISOString().split('T')[0];
+                    const filename = `${gymName.replace(/[^a-zA-Z0-9]/g, '-')}-${reportType}-report-${date}.pdf`;
+                    pdf.save(filename);
+                    
+                    showNotification('PDF downloaded successfully!', 'success');
+                    addLog(`Downloaded ${reportType} report as PDF for ${gymName}.`);
+                    return true;
+                } catch (error) {
+                    console.warn('Local PDF generation failed:', error);
+                    return false;
+                }
+            };
+
+            // Try online service first, then local generation
+            const success = await generateWithOnlineService() || await generateWithLocalLibraries();
+            
+            if (!success) {
+                // Fallback to browser print dialog
+                showNotification('Online PDF service and local generation unavailable. Opening print dialog as fallback...', 'warning');
+                
+                // Create a new window with the styled content
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+                
+                // Wait for content to load, then trigger print
+                setTimeout(() => {
+                    printWindow.print();
+                    // Close the window after printing (user may cancel)
+                    setTimeout(() => printWindow.close(), 1000);
+                }, 500);
+                
+                addLog(`Opened print dialog for ${reportType} report as fallback.`);
             }
-
-            // Save PDF
-            const date = new Date().toISOString().split('T')[0];
-            pdf.save(`${gymName.replace(/[^a-zA-Z0-9]/g, '-')}-${reportType}-report-${date}.pdf`);
-
-            showNotification('PDF downloaded successfully!', 'success');
-            addLog(`Downloaded ${reportType} report as PDF for ${gymName}.`);
+            
+            if (!success) {
+                // Fallback to browser print dialog
+                showNotification('Online PDF services unavailable. Opening print dialog as fallback...', 'warning');
+                
+                // Create a new window with the styled content
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+                
+                // Wait for content to load, then trigger print
+                setTimeout(() => {
+                    printWindow.print();
+                    // Close the window after printing (user may cancel)
+                    setTimeout(() => printWindow.close(), 1000);
+                }, 500);
+                
+                addLog(`Opened print dialog for ${reportType} report as fallback.`);
+            }
+            
         } catch (error) {
             console.error("Error generating PDF:", error);
-            showNotification('Failed to generate PDF. Please try again or check for unsupported styles.', 'error');
+            showNotification('Failed to generate PDF. Please check your internet connection and try again.', 'error');
         }
     };
 
@@ -2448,13 +2552,24 @@ const ShiftReport = ({ data, requestSort, sortConfig }) => {
         <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50"><tr>
                 <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('user')}>User {getSortIcon('user')}</th>
+                <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('endTime')}>End Date {getSortIcon('endTime')}</th>
                 <th className="px-2 py-2 text-left font-medium text-gray-500 uppercase">Period</th>
                 <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('cashSales')}>Cash Sales {getSortIcon('cashSales')}</th>
-                <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase">Expected</th>
-                <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase">Actual</th>
-                <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase">Difference</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('expectedCash')}>Expected {getSortIcon('expectedCash')}</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('actualCash')}>Actual {getSortIcon('actualCash')}</th>
+                <th className="px-2 py-2 text-right font-medium text-gray-500 uppercase cursor-pointer" onClick={() => requestSort('difference')}>Difference {getSortIcon('difference')}</th>
             </tr></thead>
-            <tbody className="bg-white divide-y divide-gray-200">{data.map(sh => (<tr key={sh.id}><td className="px-2 py-2">{sh.user}</td><td className="px-2 py-2">{new Date(sh.startTime).toLocaleTimeString()} - {new Date(sh.endTime).toLocaleTimeString()}</td><td className="px-2 py-2 text-right font-mono">₱{sh.cashSales?.toFixed(2)}</td><td className="px-2 py-2 text-right font-mono">₱{sh.expectedCash?.toFixed(2)}</td><td className="px-2 py-2 text-right font-mono">₱{sh.actualCash?.toFixed(2)}</td><td className={`px-2 py-2 text-right font-mono font-bold ${sh.difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>₱{sh.difference?.toFixed(2)}</td></tr>))}</tbody>
+            <tbody className="bg-white divide-y divide-gray-200">{data.map(sh => (
+                <tr key={sh.id}>
+                    <td className="px-2 py-2">{sh.user}</td>
+                    <td className="px-2 py-2">{new Date(sh.endTime).toLocaleDateString()}</td>
+                    <td className="px-2 py-2">{new Date(sh.startTime).toLocaleTimeString()} - {new Date(sh.endTime).toLocaleTimeString()}</td>
+                    <td className="px-2 py-2 text-right font-mono">₱{sh.cashSales?.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right font-mono">₱{sh.expectedCash?.toFixed(2)}</td>
+                    <td className="px-2 py-2 text-right font-mono">₱{sh.actualCash?.toFixed(2)}</td>
+                    <td className={`px-2 py-2 text-right font-mono font-bold ${sh.difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>₱{sh.difference?.toFixed(2)}</td>
+                </tr>
+            ))}</tbody>
         </table>
     );
 };
@@ -3156,6 +3271,35 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
     const [startingCash, setStartingCash] = useState('');
     const [actualCash, setActualCash] = useState('');
     const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+    const [centavosInput, setCentavosInput] = useState('');
+    
+// Cash denomination state
+  const [denominations, setDenominations] = useState({
+    1000: 0,
+    500: 0,
+    200: 0,
+    100: 0,
+    50: 0,
+    20: 0,
+    10: 0,
+    5: 0,
+    1: 0,
+    0.50: 0, // 50 centavos
+    0.25: 0, // 25 centavos
+    0.01: 0  // 1 centavo
+  });
+
+    // Calculate total from denominations
+    const denominationTotal = useMemo(() => {
+        return Object.entries(denominations).reduce((total, [value, count]) => {
+            return total + (parseFloat(value) * parseInt(count));
+        }, 0);
+    }, [denominations]);
+
+// Update actualCash when denomination total changes
+useEffect(() => {
+    setActualCash(denominationTotal.toFixed(2));
+}, [denominationTotal]);
 
     useEffect(() => {
         if (type === 'start') {
@@ -3165,6 +3309,52 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
             }
         }
     }, [type, shifts]);
+
+    const handleDenominationChange = (denomination, value) => {
+        setDenominations(prev => ({
+            ...prev,
+            [denomination]: Math.max(0, parseInt(value) || 0)
+        }));
+    };
+
+    const handleCentavosChange = (value) => {
+        // Update the input state immediately for natural typing
+        setCentavosInput(value);
+        
+        // Remove any non-numeric characters except decimal point
+        let cleanValue = value.replace(/[^0-9.]/g, '');
+        
+        // If the input is just a number without decimal, convert it to centavos
+        // e.g., "50" becomes "0.50", "25" becomes "0.25"
+        if (cleanValue && !cleanValue.includes('.') && cleanValue.length <= 2) {
+            const numValue = parseInt(cleanValue);
+            if (numValue <= 99) {
+                cleanValue = (numValue / 100).toFixed(2);
+            }
+        }
+        
+        // Ensure the value doesn't exceed 99.99 (reasonable limit for centavos)
+        const numericValue = parseFloat(cleanValue);
+        if (numericValue > 99.99) {
+            cleanValue = '99.99';
+        }
+        
+        // Store the centavos value as a number in the 0.01 key (since we're dealing with total centavos)
+        const centavosValue = parseFloat(cleanValue) || 0;
+        setDenominations(prev => ({
+            ...prev,
+            0.01: centavosValue * 100 // Convert to number of 1-centavo coins for calculation
+        }));
+    };
+
+    const resetDenominations = () => {
+        const resetDenoms = Object.keys(denominations).reduce((acc, key) => {
+            acc[key] = 0;
+            return acc;
+        }, {});
+        setDenominations(resetDenoms);
+        setCentavosInput(''); // Also reset the centavos input
+    };
 
     const handleStartShift = async (e) => {
         e.preventDefault();
@@ -3178,6 +3368,18 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
 
     const handleEndShift = async (e) => {
         e.preventDefault();
+        
+        // Check if cash in drawer is zero and ask for confirmation
+        const totalCash = parseFloat(actualCash || 0);
+        if (totalCash === 0) {
+            const confirmed = window.confirm(
+                "You are ending the shift with ₱0.00 cash in the drawer. Are you sure you want to continue?"
+            );
+            if (!confirmed) {
+                return; // Don't end the shift if user cancels
+            }
+        }
+        
         const shiftExpenses = expenses.filter(ex => ex.shiftId === activeShift.id);
         const cashSales = sales.filter(s => s.shiftId === activeShift.id).reduce((sum, s) => sum + (s.cashPaid || 0), 0);
         const cashExpenses = shiftExpenses.filter(ex => ex.type === 'Cash Drawer').reduce((sum, ex) => sum + ex.amount, 0);
@@ -3260,7 +3462,104 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
                         <p className="font-bold pt-2 border-t mt-2"><strong>Expected Cash in Drawer:</strong> ₱{expectedCash.toFixed(2)}</p>
                         <div>
                             <label className="block font-medium text-gray-700">Actual Cash Counted</label>
-                            <input type="number" step="0.01" value={actualCash} onChange={e => setActualCash(e.target.value)} className="w-full p-2 border rounded mt-1" required />
+                            <div className="space-y-2">
+                                <div className="bg-gray-50 p-3 rounded border">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <h5 className="font-medium text-sm">Cash Denominations</h5>
+                                        <button
+                                            type="button"
+                                            onClick={resetDenominations}
+                                            className="text-xs bg-gray-200 px-2 py-1 rounded hover:bg-gray-300"
+                                        >
+                                            Reset
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-4 text-xs">
+                                        {/* Bills */}
+                                        <div className="border-2 border-green-200 bg-green-50 rounded-lg p-3 space-y-1">
+                                            <h6 className="font-medium text-green-800 text-center mb-2">Bills</h6>
+                                            {[1000, 500, 200, 100, 50, 20].map(value => (
+                                                <div key={value} className="flex items-center justify-between">
+                                                    <span>₱{value}:</span>
+                                                    <input 
+                                                        type="number" 
+                                                        min="0" 
+                                                        value={denominations[value] || ''} 
+                                                        onChange={e => handleDenominationChange(value, e.target.value)}
+                                                        className="w-16 p-1 border rounded text-center bg-white"
+                                                        placeholder="0"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Coins and Centavos */}
+                                        <div className="space-y-3">
+                                            {/* Coins */}
+                                            <div className="border-2 border-blue-200 bg-blue-50 rounded-lg p-3 space-y-1">
+                                                <h6 className="font-medium text-blue-800 text-center mb-2">Coins</h6>
+                                                {[10, 5, 1].map(value => (
+                                                    <div key={value} className="flex items-center justify-between">
+                                                        <span>₱{value}:</span>
+                                                        <input 
+                                                            type="number" 
+                                                            min="0" 
+                                                            value={denominations[value] || ''} 
+                                                            onChange={e => handleDenominationChange(value, e.target.value)}
+                                                            className="w-16 p-1 border rounded text-center bg-white"
+                                                            placeholder="0"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            
+                                            {/* Centavos */}
+                                            <div className="border-2 border-orange-200 bg-orange-50 rounded-lg p-3 space-y-1">
+                                                <h6 className="font-medium text-orange-800 text-center mb-2">Centavos</h6>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="pr-2">Total:</span>
+                                                    <input 
+                                                        type="text" 
+                                                        min="0" 
+                                                        value={centavosInput} 
+                                                        onChange={e => handleCentavosChange(e.target.value)}
+                                                        onBlur={e => {
+                                                            // Format the input when focus is lost
+                                                            const numericValue = parseFloat(e.target.value) || 0;
+                                                            if (numericValue > 0) {
+                                                                setCentavosInput(numericValue.toFixed(2));
+                                                            } else {
+                                                                setCentavosInput('');
+                                                            }
+                                                        }}
+                                                        className="w-24 p-1 border rounded text-center bg-white"
+                                                        placeholder="0.00"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="mt-2 pt-2 border-t">
+                                        <p className="text-sm font-medium text-right">
+                                            Total: ₱{denominationTotal.toFixed(2)}
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                            <div className="mt-1">
+                                <input 
+                                    type="number" 
+                                    readOnly 
+                                    step="0.01" 
+                                    value={actualCash} 
+                                    readOnly
+                                    className="w-full p-2 border rounded bg-gray-100 text-gray-600" 
+                                    placeholder="Total from denominations above"
+                                />
+                            </div>
+                            </div>
                         </div>
                         <p><strong>Difference:</strong> <span className={`font-bold ${parseFloat(actualCash) - expectedCash >= 0 ? 'text-green-600' : 'text-red-600'}`}>₱{(parseFloat(actualCash || 0) - expectedCash).toFixed(2)}</span></p>
                     </div>
