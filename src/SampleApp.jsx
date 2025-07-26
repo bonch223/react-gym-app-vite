@@ -3556,7 +3556,6 @@ useEffect(() => {
                                     readOnly 
                                     step="0.01" 
                                     value={actualCash} 
-                                    readOnly
                                     className="w-full p-2 border rounded bg-gray-100 text-gray-600" 
                                     placeholder="Total from denominations above"
                                 />
