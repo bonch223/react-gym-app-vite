@@ -3272,6 +3272,7 @@ const ShiftModal = ({ type, activeShift, sales, expenses, onCancel, showNotifica
     const [actualCash, setActualCash] = useState('');
     const [expenseModalOpen, setExpenseModalOpen] = useState(false);
     const [centavosInput, setCentavosInput] = useState('');
+    const [showEndShiftConfirmation, setShowEndShiftConfirmation] = useState(false);
     
 // Cash denomination state
   const [denominations, setDenominations] = useState({
@@ -3366,20 +3367,14 @@ useEffect(() => {
         onCancel();
     };
 
-    const handleEndShift = async (e) => {
+    const handleEndShiftRequest = (e) => {
         e.preventDefault();
         
-        // Check if cash in drawer is zero and ask for confirmation
-        const totalCash = parseFloat(actualCash || 0);
-        if (totalCash === 0) {
-            const confirmed = window.confirm(
-                "You are ending the shift with ₱0.00 cash in the drawer. Are you sure you want to continue?"
-            );
-            if (!confirmed) {
-                return; // Don't end the shift if user cancels
-            }
-        }
-        
+        // Always show confirmation modal for end shift
+        setShowEndShiftConfirmation(true);
+    };
+
+    const handleConfirmEndShift = async () => {
         const shiftExpenses = expenses.filter(ex => ex.shiftId === activeShift.id);
         const cashSales = sales.filter(s => s.shiftId === activeShift.id).reduce((sum, s) => sum + (s.cashPaid || 0), 0);
         const cashExpenses = shiftExpenses.filter(ex => ex.type === 'Cash Drawer').reduce((sum, ex) => sum + ex.amount, 0);
@@ -3391,6 +3386,7 @@ useEffect(() => {
         setShifts(prev => prev.map(s => s.id === activeShift.id ? updatedShift : s));
         await addLog(`User ${user.username} ended shift ${activeShift.id.slice(-4)}.`);
         showNotification('Shift ended successfully!', 'success');
+        setShowEndShiftConfirmation(false);
         onCancel();
     };
 
@@ -3437,7 +3433,13 @@ useEffect(() => {
         return (
             <Modal onClose={onCancel}>
                 {expenseModalOpen && <ExpenseModal onCancel={() => setExpenseModalOpen(false)} onConfirm={handleAddLateExpense} />}
-                <form onSubmit={handleEndShift}>
+                {showEndShiftConfirmation && <EndShiftConfirmationModal 
+                    totalCash={parseFloat(actualCash || 0)}
+                    expectedCash={expectedCash}
+                    onConfirm={handleConfirmEndShift} 
+                    onCancel={() => setShowEndShiftConfirmation(false)} 
+                />}
+                <form onSubmit={handleEndShiftRequest}>
                     <h3 className="text-xl font-bold text-gray-800 mb-4">End Shift</h3>
                     <div className="space-y-3 text-sm">
                         <p><strong>Start Time:</strong> {new Date(activeShift.startTime).toLocaleString()}</p>
@@ -3565,7 +3567,7 @@ useEffect(() => {
                     </div>
                     <div className="flex justify-end space-x-3 pt-4">
                         <button type="button" onClick={onCancel} className="bg-gray-200 text-gray-700 font-bold py-2 px-4 rounded-lg hover:bg-gray-300">Cancel</button>
-                        <button type="submit" className="bg-[var(--accent-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity">End Shift</button>
+                        <button type="submit" className="bg-[var(--accent-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity">Review & End Shift</button>
                     </div>
                 </form>
             </Modal>
@@ -3573,6 +3575,86 @@ useEffect(() => {
     }
 
     return null;
+};
+
+const EndShiftConfirmationModal = ({ totalCash, expectedCash, onConfirm, onCancel }) => {
+    const difference = totalCash - expectedCash;
+    const isZeroCash = totalCash === 0;
+    
+    return (
+        <Modal onClose={onCancel} size="sm">
+            <div className="text-center">
+                <div className="mb-6">
+                    <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 mb-4">
+                        <svg className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.232 13.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-900 mb-4">Confirm End Shift</h3>
+                </div>
+                
+                <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+                    <div className="text-sm space-y-2">
+                        <div className="flex justify-between">
+                            <span className="text-gray-600">Expected Cash:</span>
+                            <span className="font-mono">₱{expectedCash.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-gray-600">Actual Cash:</span>
+                            <span className="font-mono">₱{totalCash.toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between border-t pt-2 font-semibold">
+                            <span className="text-gray-700">Difference:</span>
+                            <span className={`font-mono ${difference >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ₱{difference.toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {isZeroCash && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+                        <div className="flex items-center mb-2">
+                            <svg className="h-5 w-5 text-red-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span className="font-semibold text-red-800">Zero Cash Alert</span>
+                        </div>
+                        <p className="text-sm text-red-700">
+                            You are ending the shift with ₱0.00 in the cash drawer. Please verify this is correct.
+                        </p>
+                    </div>
+                )}
+
+                <div className="text-left text-sm text-gray-600 mb-6">
+                    <h4 className="font-semibold mb-2">Please confirm:</h4>
+                    <ul className="space-y-1 text-xs">
+                        <li>✓ All cash has been counted accurately</li>
+                        <li>✓ All transactions have been recorded</li>
+                        <li>✓ Any cash discrepancies have been noted</li>
+                        {isZeroCash && <li className="text-red-600">✓ Zero cash amount is intentional</li>}
+                    </ul>
+                </div>
+
+                <div className="flex space-x-3">
+                    <button 
+                        type="button" 
+                        onClick={onCancel} 
+                        className="flex-1 bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={onConfirm} 
+                        className="flex-1 bg-red-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                        End Shift
+                    </button>
+                </div>
+            </div>
+        </Modal>
+    );
 };
 
 const ExpenseModal = ({ onCancel, onConfirm }) => {
