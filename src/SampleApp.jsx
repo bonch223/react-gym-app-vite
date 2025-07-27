@@ -1941,9 +1941,9 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
             end = new Date(dateRange.end);
             end.setHours(23, 59, 59, 999);
         } else {
-            start = new Date();
+            start = new Date(dateRange.start);
             start.setHours(0, 0, 0, 0);
-            end = new Date();
+            end = new Date(dateRange.end);
             end.setHours(23, 59, 59, 999);
         }
 
@@ -1954,12 +1954,18 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
 
         let filteredShifts = shifts.filter(sh => {
             if (sh.status !== 'completed') return false;
-            const shiftDate = new Date(sh.endTime);
-            const matchesDate = shiftDate >= start && shiftDate <= end;
+            
+            // For cross-day shifts, check if shift overlaps with the date range
+            const shiftStart = new Date(sh.startTime);
+            const shiftEnd = new Date(sh.endTime);
+            
+            // A shift is included if it starts before the end of our range AND ends after the start of our range
+            const overlapsRange = shiftStart <= end && shiftEnd >= start;
+            
             if (!isAdmin) {
-                return matchesDate && sh.user === currentUser.username;
+                return overlapsRange && sh.user === currentUser.username;
             }
-            return matchesDate;
+            return overlapsRange;
         });
 
         let filteredCashFlow = expenses.filter(ex => {
@@ -1968,11 +1974,13 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
         });
 
         if (!isAdmin) {
-            const staffShiftsToday = shifts.filter(s => {
-                const shiftDate = new Date(s.startTime); // Use start time to include active shift
-                return s.user === currentUser.username && shiftDate >= start && shiftDate <= end;
+            const staffShiftsInRange = shifts.filter(s => {
+                const shiftStart = new Date(s.startTime);
+                const shiftEnd = s.endTime ? new Date(s.endTime) : new Date(); // Handle active shifts
+                const overlapsRange = shiftStart <= end && shiftEnd >= start;
+                return s.user === currentUser.username && overlapsRange;
             });
-            const staffShiftIds = staffShiftsToday.map(s => s.id);
+            const staffShiftIds = staffShiftsInRange.map(s => s.id);
             filteredSales = filteredSales.filter(s => staffShiftIds.includes(s.shiftId));
             filteredCashFlow = filteredCashFlow.filter(ex => staffShiftIds.includes(ex.shiftId));
         }
@@ -2377,11 +2385,9 @@ const ReportsTab = ({ sales, shifts, expenses, members, systemUsers, currentUser
                         ))}
                     </div>
                     <div className="flex items-center gap-2">
-                        {isAdmin && <>
-                            <input type="date" name="start" value={dateRange.start} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg" />
-                            <span>to</span>
-                            <input type="date" name="end" value={dateRange.end} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg" />
-                        </>}
+                        <input type="date" name="start" value={dateRange.start} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg" />
+                        <span>to</span>
+                        <input type="date" name="end" value={dateRange.end} onChange={handleDateChange} className="p-2 border border-gray-300 rounded-lg" />
                         <button onClick={handleGeneratePdf} className="bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600">Download PDF</button>
                     </div>
                 </div>
