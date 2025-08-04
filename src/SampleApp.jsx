@@ -1710,14 +1710,22 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
                 </div>
                 <div className="flex gap-2 items-center">
                     <input type="text" placeholder="Search members..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="p-2 border border-gray-300 rounded-lg" />
-                    <label className="flex items-center gap-2 text-sm text-gray-600">
+                    <label className="flex items-center gap-3 text-sm bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg px-3 py-2 hover:from-blue-100 hover:to-indigo-100 transition-all duration-200 cursor-pointer">
                         <input
                             type="checkbox"
                             checked={selectAll}
                             onChange={handleSelectAll}
-                            className="rounded"
+                            className="h-5 w-5 text-blue-600 bg-white border-2 border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 hover:border-blue-400 transition-colors duration-200"
                         />
-                        Select All ({selectedMembers.size})
+                        <span className="font-semibold text-gray-700">
+                            Select All 
+                            <span className="inline-block ml-1 px-2 py-0.5 bg-blue-500 text-white text-xs font-bold rounded-full min-w-[24px] text-center">
+                                {selectedMembers.size}
+                            </span>
+                            <span className="text-gray-500 font-normal ml-1">
+                                {selectedMembers.size === 1 ? 'member' : 'members'}
+                            </span>
+                        </span>
                     </label>
                 </div>
             </div>
@@ -1865,13 +1873,42 @@ const MemberListItem = ({ member, onEdit, onDeleteMember, onViewId, isSelected, 
         <li className={`p-4 rounded-lg flex flex-col md:flex-row items-start md:items-center justify-between hover:bg-gray-100 border-2 transition-colors ${
             isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-transparent'
         }`}>
-            <div className="flex items-start gap-3 flex-1">
-                <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={onSelect}
-                    className="mt-1 rounded"
-                />
+            <div className="flex items-center gap-3 flex-1">
+                <div className="relative flex items-center justify-center w-10 h-10">
+                    <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={onSelect}
+                        className="sr-only"
+                    />
+                    <div 
+                        onClick={onSelect}
+                        className={`w-10 h-10 rounded-lg border-2 flex items-center justify-center cursor-pointer transition-all duration-200 ${
+                            isSelected 
+                                ? 'bg-blue-600 border-blue-600 shadow-md transform scale-105' 
+                                : 'bg-white border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                        }`}
+                    >
+                        {isSelected ? (
+                            <svg 
+                                xmlns="http://www.w3.org/2000/svg" 
+                                className="h-6 w-6 text-white animate-scale-in" 
+                                fill="none" 
+                                viewBox="0 0 24 24" 
+                                stroke="currentColor"
+                            >
+                                <path 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round" 
+                                    strokeWidth={3} 
+                                    d="M5 13l4 4L19 7" 
+                                />
+                            </svg>
+                        ) : (
+                            <div className="w-6 h-6 rounded border border-gray-300 bg-white"></div>
+                        )}
+                    </div>
+                </div>
                 <div className="flex-1">
                     <p className="font-bold text-lg">{member.lastName}, {member.firstName} {member.middleInitial}</p>
                     <p className="text-sm text-gray-600">{member.nickname ? `(${member.nickname})` : ''} {member.email} {member.phone ? `| ${member.phone}` : ''}</p>
