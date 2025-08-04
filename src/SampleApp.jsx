@@ -221,6 +221,8 @@ const Icons = {
     SortDesc: () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h13M3 8h9M3 12h9m0 0l-3 3m3-3l-3-3" /></svg>,
     Reprint: () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v6a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm0 8H7v4h6v-4z" clipRule="evenodd" /></svg>,
     Refund: () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clipRule="evenodd" /></svg>,
+    SMS: () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>,
+    Send: () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>,
 };
 
 // --- Main Application Structure ---
@@ -1525,6 +1527,10 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
     const [viewingId, setViewingId] = useState(null);
     const [filter, setFilter] = useState('All');
     const [searchTerm, setSearchTerm] = useState('');
+    const [messageModalOpen, setMessageModalOpen] = useState(false);
+    const [smsSelectionModalOpen, setSMSSelectionModalOpen] = useState(false);
+    const [selectedMembers, setSelectedMembers] = useState(new Set());
+    const [selectAll, setSelectAll] = useState(false);
 
     const handleSaveMember = async (memberData, memberId, originalServices) => {
         const dataToSave = {
@@ -1616,20 +1622,84 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
         });
     }, [sortedMembers, filter, searchTerm]);
 
+    const expiringSoonMembers = useMemo(() => {
+        return members.filter(member => {
+            const status = getOverallMemberStatus(member.activeServices).text;
+            return status === 'Expiring Soon';
+        });
+    }, [members]);
+
+    const handleSelectMember = (memberId) => {
+        const newSelected = new Set(selectedMembers);
+        if (newSelected.has(memberId)) {
+            newSelected.delete(memberId);
+        } else {
+            newSelected.add(memberId);
+        }
+        setSelectedMembers(newSelected);
+        setSelectAll(newSelected.size === filteredMembers.length);
+    };
+
+    const handleSelectAll = () => {
+        if (selectAll) {
+            setSelectedMembers(new Set());
+        } else {
+            setSelectedMembers(new Set(filteredMembers.map(m => m.id)));
+        }
+        setSelectAll(!selectAll);
+    };
+
+    const handleSendSMS = (messageType) => {
+        let targetMembers = [];
+        
+        switch (messageType) {
+            case 'expiring':
+                targetMembers = expiringSoonMembers;
+                break;
+            case 'selected':
+                targetMembers = members.filter(m => selectedMembers.has(m.id));
+                break;
+            case 'all':
+                targetMembers = members;
+                break;
+            default:
+                return;
+        }
+        
+        if (targetMembers.length === 0) {
+            showNotification('No members selected or found for messaging.', 'error');
+            return;
+        }
+        
+        setMessageModalOpen({ messageType, targetMembers });
+        setSMSSelectionModalOpen(false);
+    };
+
     return (
         <div className="bg-white p-8 rounded-2xl shadow-lg">
             {editingMember && <MemberForm member={editingMember} onSave={handleSaveMember} onCancel={() => setEditingMember(null)} services={services} addLog={addLog} />}
             {viewingId && <IDModal id={viewingId.id} title={`ID for ${viewingId.firstName}`} onClose={() => setViewingId(null)} />}
+            {messageModalOpen && <MessageModal messageData={messageModalOpen} onClose={() => setMessageModalOpen(false)} showNotification={showNotification} addLog={addLog} />}
+            {smsSelectionModalOpen && <SMSSelectionModal onClose={() => setSMSSelectionModalOpen(false)} onSelect={handleSendSMS} expiringSoonMembers={expiringSoonMembers} selectedMembers={selectedMembers} allMembers={members} />}
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">Manage Members</h2>
-                <button
-                    onClick={() => setEditingMember({ activeServices: [] })}
-                    className="bg-[var(--primary-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:bg-gray-400 disabled:cursor-not-allowed"
-                    disabled={!activeShift}
-                    title={!activeShift ? "Please start a shift to add new members" : "Add New Member"}
-                >
-                    + Add Member
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setSMSSelectionModalOpen(true)}
+                        className="bg-green-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-600 transition-colors flex items-center gap-2"
+                        title="Send SMS Messages"
+                    >
+                        <Icons.SMS /> Send SMS
+                    </button>
+                    <button
+                        onClick={() => setEditingMember({ activeServices: [] })}
+                        className="bg-[var(--primary-color)] text-white font-bold py-2 px-4 rounded-lg hover:opacity-90 transition-opacity disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        disabled={!activeShift}
+                        title={!activeShift ? "Please start a shift to add new members" : "Add New Member"}
+                    >
+                        + Add Member
+                    </button>
+                </div>
             </div>
             <div className="flex flex-col md:flex-row justify-between gap-4 mb-4">
                 <div className="flex space-x-1 bg-gray-200 p-1 rounded-lg">
@@ -1638,9 +1708,20 @@ const MembersTab = ({ members, showNotification, services, setMembers, setSales,
                     <button onClick={() => setFilter('Almost Expired')} className={`px-4 py-1 rounded-md text-sm font-semibold ${filter === 'Almost Expired' ? 'bg-white shadow' : ''}`}>Almost Expired</button>
                     <button onClick={() => setFilter('No Active')} className={`px-4 py-1 rounded-md text-sm font-semibold ${filter === 'No Active' ? 'bg-white shadow' : ''}`}>No Active/Expired</button>
                 </div>
-                <input type="text" placeholder="Search members..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="p-2 border border-gray-300 rounded-lg" />
+                <div className="flex gap-2 items-center">
+                    <input type="text" placeholder="Search members..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="p-2 border border-gray-300 rounded-lg" />
+                    <label className="flex items-center gap-2 text-sm text-gray-600">
+                        <input
+                            type="checkbox"
+                            checked={selectAll}
+                            onChange={handleSelectAll}
+                            className="rounded"
+                        />
+                        Select All ({selectedMembers.size})
+                    </label>
+                </div>
             </div>
-            <ul className="space-y-3 mt-6">{filteredMembers.map(member => (<MemberListItem key={member.id} member={member} onEdit={() => setEditingMember(member)} onDeleteMember={handleDeleteMember} onViewId={() => setViewingId(member)} />))}</ul>
+            <ul className="space-y-3 mt-6">{filteredMembers.map(member => (<MemberListItem key={member.id} member={member} onEdit={() => setEditingMember(member)} onDeleteMember={handleDeleteMember} onViewId={() => setViewingId(member)} isSelected={selectedMembers.has(member.id)} onSelect={() => handleSelectMember(member.id)} />))}</ul>
         </div>
     );
 };
@@ -1776,22 +1857,32 @@ const PauseServiceModal = ({ service, onCancel, onConfirm }) => {
     );
 };
 
-const MemberListItem = ({ member, onEdit, onDeleteMember, onViewId }) => {
+const MemberListItem = ({ member, onEdit, onDeleteMember, onViewId, isSelected, onSelect }) => {
     const status = getOverallMemberStatus(member.activeServices);
     const statusColors = { red: 'bg-red-100 text-red-800', green: 'bg-green-100 text-green-800', yellow: 'bg-yellow-100 text-yellow-800', gray: 'bg-gray-100 text-gray-800', blue: 'bg-blue-100 text-blue-800' };
     const isExpired = status.text === 'All Expired' || status.text === 'No Active Services';
     return (
-        <li className="bg-gray-50 p-4 rounded-lg flex flex-col md:flex-row items-start md:items-center justify-between hover:bg-gray-100">
-            <div className="flex-1">
-                <p className="font-bold text-lg">{member.lastName}, {member.firstName} {member.middleInitial}</p>
-                <p className="text-sm text-gray-600">{member.nickname ? `(${member.nickname})` : ''} {member.email} {member.phone ? `| ${member.phone}` : ''}</p>
-                <div className="text-xs mt-1 flex flex-col items-start">
-                    {member.activeServices?.map((s, i) =>
-                        <span key={i} className="bg-gray-200 px-2 py-0.5 rounded-full mt-1">
-                            {s.serviceName} (Start: {new Date(s.purchaseDate).toLocaleDateString()} - End: {s.expiryDate ? new Date(s.expiryDate).toLocaleDateString() : 'N/A'})
-                            {s.status === 'paused' && <span className="font-semibold text-yellow-800 ml-1">(Paused)</span>}
-                        </span>
-                    )}
+        <li className={`p-4 rounded-lg flex flex-col md:flex-row items-start md:items-center justify-between hover:bg-gray-100 border-2 transition-colors ${
+            isSelected ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-transparent'
+        }`}>
+            <div className="flex items-start gap-3 flex-1">
+                <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={onSelect}
+                    className="mt-1 rounded"
+                />
+                <div className="flex-1">
+                    <p className="font-bold text-lg">{member.lastName}, {member.firstName} {member.middleInitial}</p>
+                    <p className="text-sm text-gray-600">{member.nickname ? `(${member.nickname})` : ''} {member.email} {member.phone ? `| ${member.phone}` : ''}</p>
+                    <div className="text-xs mt-1 flex flex-col items-start">
+                        {member.activeServices?.map((s, i) =>
+                            <span key={i} className="bg-gray-200 px-2 py-0.5 rounded-full mt-1">
+                                {s.serviceName} (Start: {new Date(s.purchaseDate).toLocaleDateString()} - End: {s.expiryDate ? new Date(s.expiryDate).toLocaleDateString() : 'N/A'})
+                                {s.status === 'paused' && <span className="font-semibold text-yellow-800 ml-1">(Paused)</span>}
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
             <div className="flex items-center space-x-2 mt-2 md:mt-0">
@@ -3774,6 +3865,462 @@ const UserListItem = ({ user, currentUser, onEdit, onDelete }) => {
                 )}
             </td>
         </tr>
+    );
+};
+
+// --- SMS Message Modal Component ---
+const MessageModal = ({ messageData, onClose, showNotification, addLog }) => {
+    const [selectedTemplate, setSelectedTemplate] = useState('');
+    const [customMessage, setCustomMessage] = useState('');
+    const [sending, setSending] = useState(false);
+    const [showTemplates, setShowTemplates] = useState(true);
+    const [showRecipients, setShowRecipients] = useState(false);
+
+    const predefinedTemplates = [
+        {
+            id: 'expiring_soon',
+            title: 'Membership Expiring Soon',
+            message: 'Hi {name}, your gym membership expires on {expiryDate}. Please visit us to renew and continue our services. Thank you.\n\nRage Fitness Gym'
+        },
+        {
+            id: 'promotions',
+            title: 'New Promotions & Classes',
+            message: 'Hello {name}!\n\nWe have exciting new classes and promotions available at Rage Fitness Gym. Visit us today to learn more about our latest offerings and special deals!\n\nSee you soon,\nRage Fitness Gym'
+        },
+        {
+            id: 'thank_you',
+            title: 'Thank You Message',
+            message: 'Dear {name},\n\nThank you for being a valued member of our gym community! We appreciate your continued support and dedication to your fitness journey.\n\nKeep up the great work!\nRage Fitness Gym'
+        },
+        {
+            id: 'reminder',
+            title: 'General Reminder',
+            message: 'Hi {name}!\n\nThis is a friendly reminder from Rage Fitness Gym. We look forward to seeing you soon and helping you achieve your fitness goals.\n\nStay strong,\nRage Fitness Gym'
+        },
+        {
+            id: 'welcome',
+            title: 'Welcome New Member',
+            message: 'Welcome to Rage Fitness Gym, {name}!\n\nWe\'re excited to have you join our fitness family. Our team is here to support you on your fitness journey. Don\'t hesitate to ask our staff if you need any assistance.\n\nLet\'s get started!\nRage Fitness Gym'
+        },
+        {
+            id: 'birthday',
+            title: 'Birthday Wishes',
+            message: 'Happy Birthday, {name}!\n\nWishing you a fantastic year ahead filled with health, happiness, and fitness achievements. Thank you for being part of the Rage Fitness family.\n\nCelebrate strong!\nRage Fitness Gym'
+        }
+    ];
+
+    const handleTemplateSelect = (template) => {
+        setSelectedTemplate(template.id);
+        setCustomMessage(template.message);
+    };
+
+    const formatMessage = (message, member) => {
+        // Get the earliest expiry date from active services
+        let expiryDate = 'N/A';
+        if (member.activeServices && member.activeServices.length > 0) {
+            const activeDates = member.activeServices
+                .filter(s => s.expiryDate && s.status !== 'paused')
+                .map(s => new Date(s.expiryDate))
+                .sort((a, b) => a - b);
+            
+            if (activeDates.length > 0) {
+                expiryDate = activeDates[0].toLocaleDateString();
+            }
+        }
+        
+        return message
+            .replace(/{name}/g, member.firstName || 'Member')
+            .replace(/{fullName}/g, formatMemberFullName(member))
+            .replace(/{nickname}/g, member.nickname || member.firstName || 'Member')
+            .replace(/{expiryDate}/g, expiryDate);
+    };
+
+    const handleSendMessages = async () => {
+        if (!customMessage.trim()) {
+            showNotification('Please enter a message to send.', 'error');
+            return;
+        }
+
+        setSending(true);
+
+        try {
+            const { targetMembers, messageType } = messageData;
+            const messageText = customMessage.trim();
+
+            // Check if SMS server is available
+            const SMS_SERVER_URL = process.env.REACT_APP_SMS_SERVER_URL || 'http://localhost:3001';
+            const healthCheck = await fetch(`${SMS_SERVER_URL}/health`);
+            if (!healthCheck.ok) {
+                throw new Error('SMS server is not available. Please make sure the server is running.');
+            }
+
+            const healthData = await healthCheck.json();
+            if (!healthData.twilio_configured) {
+                throw new Error('Twilio is not properly configured on the server.');
+            }
+
+            // Prepare recipients with personalized messages
+            const recipients = targetMembers.map(member => {
+                const phone = member.phone;
+                if (!phone) {
+                    return null; // Skip members without phone numbers
+                }
+                
+                return {
+                    phone: phone,
+                    personalizedMessage: formatMessage(messageText, member)
+                };
+            }).filter(recipient => recipient !== null); // Remove null entries
+
+            if (recipients.length === 0) {
+                throw new Error('No valid phone numbers found for the selected members.');
+            }
+
+            // Send bulk SMS via our backend
+            const response = await fetch(`${SMS_SERVER_URL}/api/sms/send-bulk`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: messageText, // Fallback message
+                    recipients: recipients
+                })
+            });
+
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to send SMS messages');
+            }
+
+            // Log SMS activity
+            const recipientNames = targetMembers.map(member => formatMemberFullName(member)).join(', ');
+            addLog(`SMS sent to ${result.sent}/${result.total} member(s): ${recipientNames.length > 100 ? recipientNames.substring(0, 100) + '...' : recipientNames}`);
+
+            // Show detailed results
+            if (result.failed > 0) {
+                showNotification(
+                    `SMS partially sent: ${result.sent} successful, ${result.failed} failed. Check console for details.`, 
+                    'info'
+                );
+                console.log('SMS sending results:', result);
+            } else {
+                showNotification(`All ${result.sent} messages sent successfully!`, 'success');
+            }
+
+            onClose();
+        } catch (error) {
+            console.error('SMS sending failed:', error);
+            
+            // Handle specific error cases
+            if (error.message.includes('server is not available')) {
+                showNotification(
+                    'SMS server is not running. Please start the SMS server first (see README).', 
+                    'error'
+                );
+            } else if (error.message.includes('Twilio is not properly configured')) {
+                showNotification(
+                    'Twilio credentials are not configured. Please check your .env file.', 
+                    'error'
+                );
+            } else {
+                showNotification(`Failed to send messages: ${error.message}`, 'error');
+            }
+        } finally {
+            setSending(false);
+        }
+    };
+
+    const getModalTitle = () => {
+        const { messageType, targetMembers } = messageData;
+        switch (messageType) {
+            case 'expiring':
+                return `SMS to Expiring Members (${targetMembers.length})`;
+            case 'selected':
+                return `SMS to Selected Members (${targetMembers.length})`;
+            case 'all':
+                return `SMS to All Members (${targetMembers.length})`;
+            default:
+                return `SMS to ${targetMembers.length} Member(s)`;
+        }
+    };
+
+    const previewMessage = customMessage && messageData.targetMembers.length > 0 
+        ? formatMessage(customMessage, messageData.targetMembers[0])
+        : '';
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4 print:hidden">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[90vh] relative flex overflow-hidden">
+                {/* Template Sidebar */}
+                <div className={`${showTemplates ? 'w-80' : 'w-0'} bg-gray-50 border-r border-gray-200 transition-all duration-300 overflow-hidden flex flex-col`}>
+                    <div className="p-4 border-b border-gray-200">
+                        <h4 className="font-semibold text-gray-800 mb-2">Message Templates</h4>
+                        <p className="text-xs text-gray-600">Choose a template to get started</p>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4">
+                        <div className="space-y-2">
+                            {predefinedTemplates.map(template => (
+                                <button
+                                    key={template.id}
+                                    onClick={() => handleTemplateSelect(template)}
+                                    className={`w-full p-3 text-left border rounded-lg hover:bg-white transition-colors ${
+                                        selectedTemplate === template.id ? 'border-blue-500 bg-white shadow-sm' : 'border-gray-200 bg-gray-50'
+                                    }`}
+                                >
+                                    <div className="font-medium text-sm text-gray-900">{template.title}</div>
+                                    <div className="text-xs text-gray-500 mt-1 line-clamp-2">{template.message.substring(0, 80)}...</div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Main Content */}
+                <div className="flex-1 flex flex-col">
+                    {/* Header */}
+                    <div className="flex-shrink-0 p-4 sm:p-6 border-b border-gray-200">
+                        <div className="flex justify-between items-start">
+                            <div className="flex items-center gap-3">
+                                <button 
+                                    onClick={() => setShowTemplates(!showTemplates)}
+                                    className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors"
+                                    title="Toggle templates"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                                    </svg>
+                                </button>
+                                <h3 className="text-lg sm:text-2xl font-bold text-gray-800">{getModalTitle()}</h3>
+                            </div>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2 rounded-full hover:bg-gray-100 transition-colors">
+                                <Icons.Close />
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {/* Scrollable Content */}
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+                        <div className="space-y-6">
+                            {/* SMS Service Notice */}
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                <div className="flex items-start">
+                                    <svg className="h-5 w-5 text-yellow-400 mr-2 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <div>
+                                        <span className="text-sm font-medium text-yellow-800">SMS Integration Required</span>
+                                        <p className="text-sm text-yellow-700 mt-1">
+                                            This feature requires integration with an SMS service provider. Currently, this is a demo version.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Custom Message */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Message Content</label>
+                                <textarea
+                                    value={customMessage}
+                                    onChange={(e) => setCustomMessage(e.target.value)}
+                                    rows={6}
+                                    className="w-full p-3 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                    placeholder="Type your message here or select a template from the sidebar..."
+                                />
+                                <div className="text-xs text-gray-500 mt-2">
+                                    <strong>Available placeholders:</strong> {'{name}'}, {'{fullName}'}, {'{nickname}'}, {'{expiryDate}'}
+                                </div>
+                            </div>
+
+                            {/* Message Preview */}
+                            {previewMessage && (
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Preview (for {messageData.targetMembers[0].firstName})
+                                    </label>
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                        <div className="bg-white rounded-lg p-3 shadow-sm border-l-4 border-blue-500">
+                                            <p className="text-sm text-gray-700 whitespace-pre-line">{previewMessage}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Recipients Summary */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h4 className="font-medium text-blue-900">Recipients ({messageData.targetMembers.length})</h4>
+                                    <button 
+                                        onClick={() => setShowRecipients(!showRecipients)}
+                                        className="text-blue-600 text-sm hover:text-blue-800 transition-colors"
+                                    >
+                                        {showRecipients ? 'Hide Details' : 'Show Details'}
+                                    </button>
+                                </div>
+                                
+                                {showRecipients && (
+                                    <div className="bg-white rounded-lg p-3 max-h-32 overflow-y-auto">
+                                        <div className="flex flex-wrap gap-2">
+                                            {messageData.targetMembers.slice(0, 20).map(member => (
+                                                <span key={member.id} className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                                                    {member.firstName} {member.lastName}
+                                                </span>
+                                            ))}
+                                            {messageData.targetMembers.length > 20 && (
+                                                <span className="inline-block bg-gray-200 text-gray-600 text-xs px-2 py-1 rounded-full">
+                                                    +{messageData.targetMembers.length - 20} more
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex-shrink-0 p-4 sm:p-6 border-t border-gray-200 bg-gray-50">
+                        <div className="flex justify-end space-x-3">
+                            <button
+                                onClick={onClose}
+                                disabled={sending}
+                                className="px-6 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSendMessages}
+                                disabled={sending || !customMessage.trim()}
+                                className="px-8 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                            >
+                                {sending && (
+                                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                )}
+                                <Icons.Send />
+                                {sending ? 'Sending...' : 'Send Messages'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- SMS Selection Modal Component ---
+const SMSSelectionModal = ({ onClose, onSelect, expiringSoonMembers, selectedMembers, allMembers }) => {
+    const options = [
+        {
+            id: 'expiring',
+            title: 'Expiring Soon Members',
+            description: `Send to members whose memberships expire within 5 days`,
+            count: expiringSoonMembers.length,
+            disabled: expiringSoonMembers.length === 0,
+            icon: '⏰',
+            color: 'border-yellow-200 bg-yellow-50 hover:bg-yellow-100'
+        },
+        {
+            id: 'selected',
+            title: 'Selected Members',
+            description: 'Send to members you have selected with checkboxes',
+            count: selectedMembers.size,
+            disabled: selectedMembers.size === 0,
+            icon: '✓',
+            color: 'border-blue-200 bg-blue-50 hover:bg-blue-100'
+        },
+        {
+            id: 'all',
+            title: 'All Members',
+            description: 'Send to every member in your database',
+            count: allMembers.length,
+            disabled: allMembers.length === 0,
+            icon: '👥',
+            color: 'border-green-200 bg-green-50 hover:bg-green-100'
+        }
+    ];
+
+    const handleOptionSelect = (optionId) => {
+        onSelect(optionId);
+        onClose();
+    };
+
+    return (
+        <Modal onClose={onClose} size="md">
+            <div className="space-y-6">
+                <h3 className="text-2xl font-bold text-gray-800">Send SMS Messages</h3>
+                
+                <p className="text-gray-600">Choose which group of members you'd like to send SMS messages to:</p>
+                
+                <div className="space-y-3">
+                    {options.map(option => (
+                        <button
+                            key={option.id}
+                            onClick={() => handleOptionSelect(option.id)}
+                            disabled={option.disabled}
+                            className={`w-full p-4 text-left border-2 rounded-lg transition-colors ${
+                                option.disabled 
+                                    ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed' 
+                                    : `${option.color} cursor-pointer`
+                            }`}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                    <span className="text-2xl">{option.icon}</span>
+                                    <div>
+                                        <div className="font-semibold text-gray-900">{option.title}</div>
+                                        <div className="text-sm text-gray-600">{option.description}</div>
+                                    </div>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                    <span className={`text-lg font-bold ${
+                                        option.disabled ? 'text-gray-400' : 'text-gray-700'
+                                    }`}>
+                                        {option.count}
+                                    </span>
+                                    <span className="text-xs text-gray-500">
+                                        {option.count === 1 ? 'member' : 'members'}
+                                    </span>
+                                </div>
+                            </div>
+                            {option.disabled && (
+                                <div className="mt-2 text-xs text-red-500">
+                                    {option.id === 'expiring' && 'No members with expiring memberships'}
+                                    {option.id === 'selected' && 'No members selected'}
+                                    {option.id === 'all' && 'No members in database'}
+                                </div>
+                            )}
+                        </button>
+                    ))}
+                </div>
+                
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div className="flex items-start">
+                        <svg className="h-5 w-5 text-blue-400 mr-2 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                            <span className="text-sm font-medium text-blue-800">Tip:</span>
+                            <p className="text-sm text-blue-700 mt-1">
+                                Use the checkboxes in the member list to select specific members before choosing "Selected Members".
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="flex justify-end space-x-3 pt-4 border-t">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+                    >
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </Modal>
     );
 };
 
